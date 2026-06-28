@@ -129,9 +129,9 @@ async function handleDescargas(sock, msg) {
     lines.push(`*⏸ En pausa: ${paused.length}*`);
   }
 
-lines.push(`_Total: ${torrents.length} torrent${torrents.length !== 1 ? 's' : ''}_`);
-lines.push('');
-lines.push('🎬 Ver tu contenido en: https://ver.kiguisore.com');  
+  lines.push(`_Total: ${torrents.length} torrent${torrents.length !== 1 ? 's' : ''}_`);
+  lines.push('');
+  lines.push('🎬 Ver tu contenido en: https://ver.kiguisore.com');
 
   await sock.sendMessage(chatId, { text: lines.join('\n') });
 }
