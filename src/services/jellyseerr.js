@@ -16,7 +16,7 @@ function base() {
 async function search(query) {
   const res = await client.get(`${base()}/api/v1/search`, {
     headers: getHeaders(),
-    params: { query, page: 1 },
+    params: { query: encodeURIComponent(query), page: 1 },
   });
   return res.data.results.filter(
     (r) => r.mediaType === 'movie' || r.mediaType === 'tv'

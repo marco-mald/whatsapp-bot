@@ -19,7 +19,7 @@ async function login() {
   const setCookie = res.headers['set-cookie'];
   if (!setCookie) throw new Error('Login fallido: no se recibió cookie de sesión');
 
-  const sidCookie = setCookie.find((c) => c.startsWith('SID='));
+  const sidCookie = setCookie.find((c) => c.startsWith('SID=') || c.startsWith('QBT_SID'));
   if (!sidCookie) throw new Error('Login fallido: SID no encontrado');
 
   sid = sidCookie.split(';')[0];

@@ -43,7 +43,7 @@ async function messageHandler(sock, msg) {
         '*Comandos disponibles:*\n\n' +
         '🔍 *!buscar <nombre>* — Busca y solicita una película o serie\n' +
         '📥 *!descargas* — Estado actual de qBittorrent\n' +
-        '🆔 *!chatid* — Muestra el ID de este chat (para configurar notificaciones)',
+        '🆔 *!chatid* — Muestra el ID de este chat (para configurar notificaciones)\n\n🎬 Ver contenido: https://ver.kiguisore.com\n📋 Pedir contenido: https://pedir.kiguisore.com',
     });
     return;
   }

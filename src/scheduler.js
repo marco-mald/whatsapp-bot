@@ -29,7 +29,7 @@ async function sendTrending(sock) {
   if (!trending.length) return;
 
   await sock.sendMessage(chatId, {
-    text: '🌟 *Sugerencias de la semana* 🌟\n_Los picks de este domingo:_',
+    text: '🌟 *Sugerencias de la semana* 🌟\n_Los picks de este domingo:_\n\n¿Te interesa algo? Pídelo en: https://pedir.kiguisore.com',
   });
 
   for (const media of trending) {

@@ -4,3 +4,90 @@
 2026-06-27T14:37:34: [Bot] Conexión cerrada. Código: 408. Reconectando: true
 2026-06-27T14:37:37: [Bot] Usando Baileys v2.3000.1035194821
 2026-06-27T14:37:37: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:09:31: Closing session: SessionEntry {
+  _chains: {
+    'BdWwVBbOtoLKeV0rKPv7z7xB4Jb3Iy6ffE0/sOhSdq8W': { chainKey: [Object], chainType: 2, messageKeys: {} },
+    'BXoqmnih95pIDDFjf1e9W+TR5Ee581IaNXYcshTCL14F': { chainKey: [Object], chainType: 1, messageKeys: {} }
+  },
+  registrationId: 753566323,
+  currentRatchet: {
+    ephemeralKeyPair: {
+      pubKey: <Buffer 05 7a 2a 9a 78 a1 f7 9a 48 0c 31 63 7f 57 bd 5b e4 d1 e4 47 b9 f3 52 1a 35 76 1c b2 14 c2 2f 5e 05>,
+      privKey: <Buffer 58 70 d0 42 ad d9 e1 9f e1 1c 56 77 7c 06 81 bb dc e5 29 21 ca f1 e6 1d 6a 68 b1 83 e6 44 3c 77>
+    },
+    lastRemoteEphemeralKey: <Buffer 05 d5 b0 54 16 ce b6 82 ca 79 5d 2b 28 fb fb cf bc 41 e0 96 f7 23 2e 9f 7c 4d 3f b0 e8 52 76 af 16>,
+    previousCounter: 0,
+    rootKey: <Buffer 7e 14 de 9d 9e aa ad d8 b0 93 a6 a2 bf 5e 12 88 dd b7 f3 86 aa b6 5e 7d f9 98 c1 d9 fc c6 ac 43>
+  },
+  indexInfo: {
+    baseKey: <Buffer 05 74 6b 7c 5c 48 a2 09 0b 45 6e d3 79 d2 aa 86 8b 6c 03 2a 5b 23 df f9 1b f0 cd 32 09 92 99 a4 08>,
+    baseKeyType: 2,
+    closed: -1,
+    used: 1782458428744,
+    created: 1782458428744,
+    remoteIdentityKey: <Buffer 05 6b 4b a7 92 fd 8a f5 01 37 91 2a 7b d5 a0 0c 9e a0 8d bc 27 2e 3f ea 93 31 f4 a4 47 e6 a1 03 5b>
+  }
+}
+2026-06-27T15:12:53: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:12:55: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:12:55: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:20:01: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:20:02: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:20:02: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:24:32: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:24:33: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:24:33: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:30:58: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:31:00: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:31:00: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:33:22: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:33:23: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:33:23: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:34:36: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:34:37: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:34:37: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:38:01: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:38:03: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:38:03: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:43:53: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:43:54: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:43:54: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T15:59:43: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T15:59:44: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T15:59:44: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T16:05:23: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T16:05:25: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T16:05:25: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T16:17:10: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T16:17:12: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T16:17:12: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T16:26:25: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T16:26:26: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T16:26:26: [Scheduler] Notificaciones programadas: domingos 11:00am (America/Mexico_City)
+2026-06-27T16:55:25: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:55:45: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:05: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:13: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:13: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:16: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:16: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:19: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:19: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:22: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:22: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:25: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:25: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:28: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:28: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:31: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:31: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:34: [Bot] Usando Baileys v2.3000.1023223821
+2026-06-27T16:56:34: [Bot] Conexión cerrada. Código: 408. Reconectando: true
+2026-06-27T16:56:37: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T16:56:38: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T16:57:08: [Bot] Conexión cerrada. Código: 428. Reconectando: true
+2026-06-27T16:57:11: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T16:57:13: [Bot] ✅ Conectado a WhatsApp
+2026-06-27T16:57:42: [Bot] Conexión cerrada. Código: 428. Reconectando: true
+2026-06-27T16:57:45: [Bot] Usando Baileys v2.3000.1035194821
+2026-06-27T16:57:46: [Bot] ✅ Conectado a WhatsApp

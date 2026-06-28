@@ -114,7 +114,7 @@ async function handleSelection(sock, msg, numberStr) {
   try {
     await jellyseerr.requestMedia(media.mediaType, media.id);
     await sock.sendMessage(chatId, {
-      text: `✅ *${title}* solicitada correctamente.\nJellyseerr gestionará la descarga automáticamente.`,
+      text: `✅ *${title}* solicitada correctamente.\nJellyseerr gestionará la descarga automáticamente.\n\n📋 Revisa el estado en: https://pedir.kiguisore.com`,
     });
   } catch (err) {
     const apiMsg = err.response?.data?.message || '';
