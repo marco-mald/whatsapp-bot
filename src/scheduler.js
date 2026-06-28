@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const axios = require('axios');
 const jellyseerr = require('./services/jellyseerr');
+const qbittorrent = require('./services/qbittorrent');
 
 function mediaTypeLabel(mediaType) {
   return mediaType === 'movie' ? '🎬 Película' : '📺 Serie';
@@ -65,6 +66,64 @@ async function sendTrending(sock) {
   }
 }
 
+const COMPLETED_STATES = new Set([
+  'uploading', 'stalledUP', 'pausedUP', 'queuedUP', 'forcedUP', 'checkingUP', 'moving',
+]);
+
+function isCompleted(torrent) {
+  return COMPLETED_STATES.has(torrent.state) || torrent.progress >= 1;
+}
+
+async function checkCompletedDownloads(sock, notifiedHashes, isFirstRun) {
+  const chatId = process.env.TARGET_CHAT_ID;
+  if (!chatId) return;
+
+  let torrents;
+  try {
+    torrents = await qbittorrent.getTorrents();
+  } catch (err) {
+    console.error('[Watcher] Error al obtener torrents:', err.message);
+    return;
+  }
+
+  for (const t of torrents) {
+    if (!isCompleted(t)) continue;
+    if (notifiedHashes.has(t.hash)) continue;
+
+    notifiedHashes.add(t.hash);
+
+    if (isFirstRun) continue; // seed silently on startup
+
+    console.log(`[Watcher] Descarga completada: ${t.name}`);
+    try {
+      await sock.sendMessage(chatId, {
+        text:
+          `✅ *Descarga completada* 🎉\n\n` +
+          `📁 *${t.name}*\n\n` +
+          `Ya está listo en tu biblioteca 👇\n` +
+          `🎬 https://ver.kiguisore.com`,
+      });
+    } catch (err) {
+      console.error('[Watcher] Error enviando notificación:', err.message);
+    }
+  }
+}
+
+function setupDownloadWatcher(sock) {
+  const notifiedHashes = new Set();
+  let isFirstRun = true;
+
+  const run = () =>
+    checkCompletedDownloads(sock, notifiedHashes, isFirstRun).finally(() => {
+      isFirstRun = false;
+    });
+
+  run(); // seed immediately on startup
+  setInterval(run, 2 * 60 * 1000); // then every 2 minutes
+
+  console.log('[Watcher] Vigilando descargas completadas (cada 2 min)');
+}
+
 function setupScheduler(sock) {
   const timezone = process.env.TIMEZONE || 'America/Mexico_City';
 
@@ -83,4 +142,4 @@ function setupScheduler(sock) {
   console.log(`[Scheduler] Notificaciones programadas: domingos 11:00am (${timezone})`);
 }
 
-module.exports = { setupScheduler, sendTrending };
+module.exports = { setupScheduler, setupDownloadWatcher, sendTrending };

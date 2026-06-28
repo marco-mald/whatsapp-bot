@@ -1,5 +1,6 @@
 const axios = require('axios');
 const jellyseerr = require('../services/jellyseerr');
+const db = require('../db');
 
 // "chatId:participantId" -> { results: [], expires: timestamp }
 const pendingSearches = new Map();
@@ -36,6 +37,14 @@ async function sendPoster(sock, chatId, posterPath, caption) {
 
 async function handleBuscar(sock, msg, query) {
   const chatId = msg.key.remoteJid;
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+
+  if (!db.getUser(senderJid)) {
+    await sock.sendMessage(chatId, {
+      text: '⚠️ Necesitas vincular tu cuenta antes de pedir contenido.\n\nUsa *!vincular <tu_usuario_jellyseerr>* para hacerlo.',
+    });
+    return;
+  }
 
   if (!query) {
     await sock.sendMessage(chatId, { text: '❌ Uso: *!buscar <nombre>*\nEjemplo: !buscar Breaking Bad' });
@@ -106,15 +115,21 @@ async function handleSelection(sock, msg, numberStr) {
   const title = media.title || media.name;
   const year = releaseYear(media);
 
+  // Resolve linked Jellyseerr user
+  const senderJid = msg.key.participant || msg.key.remoteJid;
+  const linkedUser = db.getUser(senderJid);
+  const userId = linkedUser?.jellyseerrId || null;
+
   // Show poster while requesting
   const caption = `${mediaTypeLabel(media.mediaType)} *${title}* (${year})\n\n⏳ Solicitando...`;
   const sent = await sendPoster(sock, chatId, media.posterPath, caption);
   if (!sent) await sock.sendMessage(chatId, { text: caption });
 
   try {
-    await jellyseerr.requestMedia(media.mediaType, media.id);
+    await jellyseerr.requestMedia(media.mediaType, media.id, userId);
+    const userTag = linkedUser ? ` (a nombre de *${linkedUser.displayName}*)` : '';
     await sock.sendMessage(chatId, {
-      text: `✅ *${title}* solicitada correctamente.\nJellyseerr gestionará la descarga automáticamente.\n\n📋 Revisa el estado en: https://pedir.kiguisore.com`,
+      text: `✅ *${title}* solicitada correctamente${userTag}.\nJellyseerr gestionará la descarga automáticamente.\n\n📋 Revisa el estado en: https://pedir.kiguisore.com`,
     });
   } catch (err) {
     const apiMsg = err.response?.data?.message || '';

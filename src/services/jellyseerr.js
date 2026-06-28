@@ -23,13 +23,28 @@ async function search(query) {
   );
 }
 
-async function requestMedia(mediaType, mediaId) {
-  const body = { mediaType, mediaId };
+async function requestMedia(mediaType, mediaId, userId = null) {
+  const body = { mediaType, mediaId, is4k: false };
   if (mediaType === 'tv') body.seasons = 'all';
+  if (userId) body.userId = userId;
   const res = await client.post(`${base()}/api/v1/request`, body, {
     headers: getHeaders(),
   });
   return res.data;
+}
+
+async function findUserByUsername(username) {
+  const res = await client.get(`${base()}/api/v1/user`, {
+    headers: getHeaders(),
+    params: { take: 100, skip: 0 },
+  });
+  const users = res.data.results || [];
+  const lower = username.toLowerCase();
+  return (
+    users.find((u) => u.username?.toLowerCase() === lower) ||
+    users.find((u) => u.email?.toLowerCase() === lower) ||
+    null
+  );
 }
 
 async function getTrending() {
@@ -40,4 +55,4 @@ async function getTrending() {
   return res.data.results.slice(0, 3);
 }
 
-module.exports = { search, requestMedia, getTrending };
+module.exports = { search, requestMedia, getTrending, findUserByUsername };
