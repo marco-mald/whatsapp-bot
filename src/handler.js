@@ -99,6 +99,9 @@ function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
       `, por ${isGroup ? 'grupo' : 'mensaje directo'}.`,
     `ID de este chat (por si te lo preguntan): ${chatJid}`,
   ];
+  if (user?.apodo) {
+    lines.push(`Dirígete a esta persona de forma cálida como "${user.apodo}".`);
+  }
   if (mode === 'restricted') {
     lines.push(
       'Permisos de este usuario: consultar estado, pedir contenido y agregar subtítulos. ' +
