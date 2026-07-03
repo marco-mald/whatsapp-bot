@@ -13,7 +13,7 @@ import json
 from mcp.server.fastmcp import FastMCP
 
 from .inventory import SERVICE_IDS, find_service
-from .services import diagnostics, process
+from .services import arr_media, diagnostics, jellyseerr, process, qbittorrent
 
 mcp = FastMCP("mediaops")
 
@@ -88,6 +88,93 @@ async def diagnostics_explain(service: str) -> str:
     if not svc:
         return _UNKNOWN.format(service)
     return _dumps(await diagnostics.explain_service(svc))
+
+
+@mcp.tool()
+async def library_search(query: str) -> str:
+    """Search movies/series by name. Returns each result's tmdbId and current
+    library status: available, downloading, pending_approval,
+    partially_available, or not_requested. Always use this first to answer
+    'do we have X?' or before adding anything."""
+    try:
+        return _dumps(await jellyseerr.search(query))
+    except Exception as err:
+        return f"library_search failed: {err}"
+
+
+@mcp.tool()
+async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | None = None) -> str:
+    """Request a movie or series ('movie' or 'tv', tmdbId from library_search).
+    The request is auto-approved and downloading starts immediately, so confirm
+    intent before calling. For tv, all seasons are requested. Optionally
+    attribute the request to a Jellyseerr user id."""
+    if media_type not in ("movie", "tv"):
+        return "media_type must be 'movie' or 'tv'"
+    try:
+        return _dumps(await jellyseerr.request_media(media_type, tmdb_id, jellyseerr_user_id))
+    except Exception as err:
+        return f"media_add failed: {err}"
+
+
+@mcp.tool()
+async def requests_pending() -> str:
+    """List Jellyseerr requests waiting for approval (requestId, media,
+    who asked, when)."""
+    try:
+        return _dumps(await jellyseerr.pending_requests())
+    except Exception as err:
+        return f"requests_pending failed: {err}"
+
+
+@mcp.tool()
+async def requests_manage(request_id: int, action: str) -> str:
+    """Approve or decline a pending Jellyseerr request.
+    action: 'approve' | 'decline'."""
+    try:
+        return await jellyseerr.manage_request(request_id, action)
+    except Exception as err:
+        return f"requests_manage failed: {err}"
+
+
+@mcp.tool()
+async def downloads_status() -> str:
+    """Current qBittorrent torrents: state, progress %, speed, ETA, size.
+    Use for 'how are the downloads going'."""
+    try:
+        return _dumps(await qbittorrent.torrents())
+    except Exception as err:
+        return f"downloads_status failed: {err}"
+
+
+@mcp.tool()
+async def downloads_control(action: str, torrent_hash: str = "all") -> str:
+    """Pause or resume torrents. action: 'pause' | 'resume';
+    torrent_hash: a hash from downloads_status, or 'all'."""
+    try:
+        return await qbittorrent.control(action, torrent_hash)
+    except Exception as err:
+        return f"downloads_control failed: {err}"
+
+
+@mcp.tool()
+async def media_queue() -> str:
+    """Radarr+Sonarr import queues: what is downloading/importing right now
+    and, crucially, per-item errors (stuck imports, failed downloads). The
+    first place to look for 'why didn't X arrive'."""
+    try:
+        return _dumps(await arr_media.import_queues())
+    except Exception as err:
+        return f"media_queue failed: {err}"
+
+
+@mcp.tool()
+async def library_missing(limit: int = 15) -> str:
+    """Monitored but missing media: movies (Radarr) and aired episodes
+    (Sonarr) that haven't been downloaded yet."""
+    try:
+        return _dumps(await arr_media.missing(limit))
+    except Exception as err:
+        return f"library_missing failed: {err}"
 
 
 def main() -> None:

@@ -97,7 +97,8 @@ async function messageHandler(sock, msg) {
       ? '*Administración del servidor:*\n' +
         '🏥 *!salud* — Estado de todos los servicios\n' +
         '🔄 *!reiniciar <servicio>* — Reinicia un servicio (incluye Jellyfin)\n' +
-        '🤖 *!claude* — Chat con Claude CLI (exit() para terminar)\n\n'
+        '🤖 *!claude* — Chat con Claude CLI (exit() para terminar)\n' +
+        '🆔 *!chatid* — ID del chat actual\n\n'
       : '';
 
     await sock.sendMessage(replyJid, {
@@ -114,6 +115,15 @@ async function messageHandler(sock, msg) {
 
   if (lower === '!claude') {
     if (isAdmin(senderJid)) await handleClaudeStart(sock, senderJid, replyJid);
+    return;
+  }
+
+  if (lower === '!chatid') {
+    if (isAdmin(senderJid)) {
+      await sock.sendMessage(replyJid, {
+        text: `🆔 Chat ID de este chat:\n\`${replyJid}\``,
+      });
+    }
     return;
   }
 
