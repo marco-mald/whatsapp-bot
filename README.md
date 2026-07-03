@@ -6,9 +6,10 @@ deterministic commands, natural language via Claude, push events, and autonomous
 night maintenance.
 
 ```
-WhatsApp group (quiet hours 22:00–08:00)
-   ├── !commands ────────────── deterministic, free, instant
-   ├── !claude (admin) ──────── natural language → Claude Code CLI → MCP tools
+WhatsApp (quiet hours 22:00–08:00)
+   ├── Natural language ─────── every interaction → Claude Code CLI → MCP tools
+   │     ├─ admin surfaces (admin DM + "Debug" group): full toolset
+   │     └─ everyone else (@mention in groups): least-privilege toolset
    ├── Webhooks (:3010) ─────── Radarr/Sonarr/Jellyseerr push → notifications
    │                            └─ failures → automatic Claude diagnosis
    └── Night optimizer ──────── drains normalization backlog 01:00–08:00
@@ -25,24 +26,27 @@ The AI never talks to services directly: agent runs are locked to the MCP tools
 | `mcp/` | `mediaops` MCP server — 27 tools over the whole stack | Python ≥3.11, uv venv |
 | `~/Downloads/media_manager` | Audio/video normalizer (separate repo, has its own README) | pm2 (`media-manager`) |
 
-## WhatsApp commands
+## Interaction model — natural language only
 
-Everyone:
+There are no `!` commands. Everything is conversational, with zero-trust access
+tiers enforced at the platform level (per-run MCP tool allowlists, not prompts):
 
-- `!buscar <name>` — search Jellyseerr, reply with a number to request
-- `!descargas` — qBittorrent status
-- `!ayuda` — command list
+| Surface | Who | Mode | Capabilities |
+|---|---|---|---|
+| Admin DM + group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 27 tools + unrestricted CLI |
+| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query status + request media: `library_search`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing` |
+| DMs from registered non-admin users | Registered users | `restricted` | Same as above |
+| Unknown numbers | — | — | Ignored entirely |
 
-Admin only (`ADMIN_NUMBER` in `.env`):
-
-- `!salud` — Claude investigates the whole stack (read-only) and reports
-- `!reiniciar <service>` — Claude restarts it and verifies it came back
-- `!claude` — natural-language session with the full MCP toolset (`exit()` / `!salir` to end)
-- `!chatid` — show the current chat's ID
-
-Users live in `data/users.local.json` (gitignored; phone → Jellyseerr account,
-loaded by [src/users.js](src/users.js)); by design — a handful of fixed users,
-not meant to scale.
+- Requests are attributed: each run carries the speaker's identity, and
+  `media_add` is called with their `jellyseerr_user_id`.
+- Conversations keep context per chat+user for 20 min (`exit()` or `reset` to clear).
+- Every agent run costs money (~$0.05–0.35) — that's why groups require a
+  mention and unknown numbers are dropped silently.
+- Registered users live in `data/users.local.json` (gitignored; phone →
+  Jellyseerr account, loaded by [src/users.js](src/users.js)).
+- Chat JIDs show up in the pm2 logs (`[NL] <user> (mode) @ <jid>: ...`) — use
+  that to discover a group's ID for `TARGET_CHAT_ID` / `ADMIN_CHAT_IDS`.
 
 ## Automatic behavior
 
@@ -86,8 +90,9 @@ Notes:
 - `optimization_run` is strictly sequential (refuses if a job is active) so a
   batch request can never melt the host.
 - Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):
-  `mediaops` (locked to MCP tools — used by `!salud`/`!reiniciar` and auto-diagnosis)
-  and `full` (admin `!claude` terminal, `--dangerously-skip-permissions`).
+  `full` (admin surfaces, `--dangerously-skip-permissions`), `restricted`
+  (least-privilege tool allowlist), `mediaops` (all MCP tools, nothing else —
+  used by the automatic failure diagnosis).
 
 ## Setup
 
@@ -102,8 +107,9 @@ cd mcp && uv venv && uv pip install -e .
 ```
 
 `.env` keys: `JELLYSEERR_URL/API_KEY`, `QBIT_URL/USER/PASS`, `TARGET_CHAT_ID`
-(group JID, get it with `!chatid`), `TIMEZONE`, `ADMIN_NUMBER`, `WEBHOOK_PORT/TOKEN`,
-`QUIET_HOURS`, `JELLYFIN_URL/API_KEY`, `OPTIMIZE_WINDOW`.
+(group JID for notifications), `TIMEZONE`, `ADMIN_NUMBER`, `ADMIN_GROUP_NAME`
+(default `Debug`), `ADMIN_CHAT_IDS` (optional extra admin chat JIDs),
+`WEBHOOK_PORT/TOKEN`, `QUIET_HOURS`, `JELLYFIN_URL/API_KEY`, `OPTIMIZE_WINDOW`.
 
 One-time host config:
 
