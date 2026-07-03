@@ -233,10 +233,11 @@ async def indexers_test() -> str:
 
 @mcp.tool()
 async def optimization_report(rescan: bool = False) -> str:
-    """Audio-normalization state of the whole library (Media Manager): file
-    counts by status and the list pending normalization ('needs-fix' or
-    'no-aac'), with the file_id needed for optimization_run. rescan=True
-    re-analyzes every file (slow); otherwise uses the last scan."""
+    """Normalization state of the library (Media Manager): counts by status,
+    files pending normalization (needs-fix = default track, no-aac = audio,
+    needs-video = full H.264 re-encode taking 30-90 min), files with errors,
+    plus current CPU and active job count. rescan=True re-analyzes every file
+    (slow); otherwise uses the last scan."""
     try:
         return _dumps(await mediamanager.report(rescan))
     except Exception as err:
@@ -245,8 +246,11 @@ async def optimization_report(rescan: bool = False) -> str:
 
 @mcp.tool()
 async def optimization_run(file_id: str) -> str:
-    """Normalize one file's audio via Media Manager (AAC track, correct
-    default, strip extras). Returns a job_id to follow with optimization_job."""
+    """Start normalizing ONE file via Media Manager (H.264 re-encode if
+    needed + AAC 2.0 audio). Strictly sequential: refuses if another job is
+    already running — never try to start several at once. needs-video jobs
+    take 30-90 min: start it, tell the user it's running, and let them ask
+    later; do NOT wait for completion. Returns a job_id for optimization_job."""
     try:
         return _dumps(await mediamanager.normalize(file_id))
     except Exception as err:
@@ -255,11 +259,22 @@ async def optimization_run(file_id: str) -> str:
 
 @mcp.tool()
 async def optimization_job(job_id: str) -> str:
-    """Progress and log tail of a Media Manager normalization job."""
+    """Progress of a normalization job: done flag, % progress derived from
+    ffmpeg output, and log tail (OK:/ERROR: lines indicate the outcome)."""
     try:
         return _dumps(await mediamanager.job_status(job_id))
     except Exception as err:
         return f"optimization_job failed: {err}"
+
+
+@mcp.tool()
+async def optimization_cancel(job_id: str) -> str:
+    """Cancel a running normalization job (SIGTERM to ffmpeg; temp files are
+    cleaned up automatically). Only when the user asks or a job is stuck."""
+    try:
+        return _dumps(await mediamanager.cancel(job_id))
+    except Exception as err:
+        return f"optimization_cancel failed: {err}"
 
 
 def main() -> None:
