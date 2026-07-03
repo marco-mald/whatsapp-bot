@@ -12,6 +12,7 @@ const { messageHandler } = require('./handler');
 const { setupScheduler } = require('./scheduler');
 const { setupNotifications } = require('./notifications');
 const { setupWebhooks } = require('./webhooks');
+const { setupOptimizer } = require('./optimizer');
 
 const logger = pino({ level: 'silent' });
 let schedulerInitialized = false;
@@ -100,6 +101,7 @@ async function connectToWhatsApp() {
         setupScheduler(sockRef);
         setupNotifications(sockRef);
         setupWebhooks();
+        setupOptimizer();
         schedulerInitialized = true;
       }
     }

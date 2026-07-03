@@ -14,11 +14,13 @@ from mcp.server.fastmcp import FastMCP
 
 from .inventory import SERVICE_IDS, find_service
 from .services import (
+    analytics,
     arr_media,
     bazarr,
     diagnostics,
     jellyseerr,
     mediamanager,
+    memory,
     process,
     prowlarr,
     qbittorrent,
@@ -275,6 +277,56 @@ async def optimization_cancel(job_id: str) -> str:
         return _dumps(await mediamanager.cancel(job_id))
     except Exception as err:
         return f"optimization_cancel failed: {err}"
+
+
+@mcp.tool()
+async def streaming_sessions() -> str:
+    """Who is watching Jellyfin right now: user, device, title, and whether
+    it's direct play or transcoding. Also check before heavy operations."""
+    try:
+        return _dumps(await analytics.jellyfin_sessions())
+    except Exception as err:
+        return f"streaming_sessions failed: {err}"
+
+
+@mcp.tool()
+async def analytics_storage() -> str:
+    """Disk usage: filesystems (including the media mount /mnt/ADATA) and
+    size per media folder. Use for 'what is taking so much space'."""
+    try:
+        return _dumps(await analytics.storage())
+    except Exception as err:
+        return f"analytics_storage failed: {err}"
+
+
+@mcp.tool()
+async def analytics_library() -> str:
+    """Library totals: movies (owned/downloaded), series with episode
+    completeness, and total library size on disk."""
+    try:
+        return _dumps(await analytics.library_summary())
+    except Exception as err:
+        return f"analytics_library failed: {err}"
+
+
+@mcp.tool()
+async def memory_recall() -> str:
+    """Saved preferences and standing decisions (e.g. 'Latino audio preferred',
+    'nothing over 8GB'). Check this before media or quality decisions."""
+    try:
+        return _dumps(memory.recall())
+    except Exception as err:
+        return f"memory_recall failed: {err}"
+
+
+@mcp.tool()
+async def memory_save(note: str) -> str:
+    """Persist a preference or standing decision for future sessions. Save
+    only durable facts ('prefers X'), not one-off events."""
+    try:
+        return memory.save(note)
+    except Exception as err:
+        return f"memory_save failed: {err}"
 
 
 def main() -> None:

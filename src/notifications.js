@@ -37,6 +37,18 @@ function minutesNow() {
   return h * 60 + m;
 }
 
+// Generic "HH:MM-HH:MM" window check (handles spanning midnight). Returns
+// false for "off" or unparseable values.
+function inTimeWindow(raw) {
+  const m = (raw || '').trim().match(/^(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})$/);
+  if (!m) return false;
+  const start = +m[1] * 60 + +m[2];
+  const end = +m[3] * 60 + +m[4];
+  const now = minutesNow();
+  if (start <= end) return now >= start && now < end;
+  return now >= start || now < end;
+}
+
 function inQuietHours() {
   const q = quietConfig();
   if (!q) return false;
@@ -121,4 +133,4 @@ function setupNotifications(ref) {
   );
 }
 
-module.exports = { setupNotifications, notify, inQuietHours };
+module.exports = { setupNotifications, notify, inQuietHours, inTimeWindow };
