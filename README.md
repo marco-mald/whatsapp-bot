@@ -1,0 +1,136 @@
+# Marcobot — AI MediaOps Platform
+
+WhatsApp bot + MCP server that manages a personal media stack (Jellyfin, Radarr,
+Sonarr, Prowlarr, Bazarr, Jellyseerr, qBittorrent, Media Manager) through
+deterministic commands, natural language via Claude, push events, and autonomous
+night maintenance.
+
+```
+WhatsApp group (quiet hours 22:00–08:00)
+   ├── !commands ────────────── deterministic, free, instant
+   ├── !claude (admin) ──────── natural language → Claude Code CLI → MCP tools
+   ├── Webhooks (:3010) ─────── Radarr/Sonarr/Jellyseerr push → notifications
+   │                            └─ failures → automatic Claude diagnosis
+   └── Night optimizer ──────── drains normalization backlog 01:00–08:00
+```
+
+The AI never talks to services directly: agent runs are locked to the MCP tools
+(`--strict-mcp-config`), so every capability is typed, scoped, and auditable.
+
+## Components
+
+| Path | What | Runtime |
+|---|---|---|
+| `src/` | WhatsApp bot (Baileys), command router, webhooks, notifications, night optimizer | Node ≥18, pm2 (`marcobot`) |
+| `mcp/` | `mediaops` MCP server — 27 tools over the whole stack | Python ≥3.11, uv venv |
+| `~/Downloads/media_manager` | Audio/video normalizer (separate repo, has its own README) | pm2 (`media-manager`) |
+
+## WhatsApp commands
+
+Everyone:
+
+- `!buscar <name>` — search Jellyseerr, reply with a number to request
+- `!descargas` — qBittorrent status
+- `!ayuda` — command list
+
+Admin only (`ADMIN_NUMBER` in `.env`):
+
+- `!salud` — Claude investigates the whole stack (read-only) and reports
+- `!reiniciar <service>` — Claude restarts it and verifies it came back
+- `!claude` — natural-language session with the full MCP toolset (`exit()` / `!salir` to end)
+- `!chatid` — show the current chat's ID
+
+Users are hardcoded in [src/users.js](src/users.js) (phone → Jellyseerr account);
+by design — 7 fixed users, not meant to scale.
+
+## Automatic behavior
+
+- **Push notifications** (to `TARGET_CHAT_ID`, the group; DMs don't work):
+  request approved 📥, media available 🍿 (with poster and requester),
+  download failed ❌, technical errors ⚠️. Sources: Radarr/Sonarr/Jellyseerr
+  webhooks registered as "Marcobot" pointing to `:3010/hooks/<source>?token=…`.
+- **Automatic diagnosis**: failure events trigger a Claude run (MCP-locked,
+  max 1 per 30 min, 6 h dedupe) that posts probable cause + suggested action.
+- **Quiet hours** (`QUIET_HOURS`, default 22:00–08:00): notifications queue in
+  `data/notify-queue.json` and arrive as one morning digest 🌙.
+- **Night optimizer** (`OPTIMIZE_WINDOW`, default 01:00–08:00): normalizes the
+  Media Manager backlog one file at a time — only if no job is running AND
+  nobody is streaming on Jellyfin. Priority: needs-fix → no-aac → needs-video.
+  Failed files are remembered and skipped (`data/optimizer-state.json`).
+  Morning summary 🔧 to the group.
+- **Sunday 11:00**: trending suggestions with posters (`TIMEZONE`).
+
+## MCP server (`mcp/`)
+
+27 tools in `mediaops`, grouped by module:
+
+| Module | Tools |
+|---|---|
+| system | `system_status`, `system_logs`, `system_restart`, `system_resources` |
+| diagnostics | `diagnostics_health`, `diagnostics_explain` |
+| requests | `library_search`, `media_add`, `requests_pending`, `requests_manage` |
+| downloads | `downloads_status`, `downloads_control` |
+| media | `media_queue`, `library_missing` |
+| subtitles | `subtitles_missing`, `subtitles_search` |
+| indexers | `indexers_health`, `indexers_test` |
+| optimization | `optimization_report`, `optimization_run`, `optimization_job`, `optimization_cancel` |
+| streaming | `streaming_sessions` |
+| analytics | `analytics_storage`, `analytics_library` |
+| memory | `memory_recall`, `memory_save` |
+
+Notes:
+
+- Credentials are read at call time — ARR API keys from `~/arrstack/<svc>/config.xml`,
+  Bazarr key from its `config.yaml`, the rest from this repo's `.env`. Nothing cached.
+- `optimization_run` is strictly sequential (refuses if a job is active) so a
+  batch request can never melt the host.
+- Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):
+  `mediaops` (locked to MCP tools — used by `!salud`/`!reiniciar` and auto-diagnosis)
+  and `full` (admin `!claude` terminal, `--dangerously-skip-permissions`).
+
+## Setup
+
+```bash
+# Bot
+npm install
+cp .env.example .env   # fill in (see below)
+pm2 start src/bot.js --name marcobot   # scan QR on first run
+
+# MCP server
+cd mcp && uv venv && uv pip install -e .
+```
+
+`.env` keys: `JELLYSEERR_URL/API_KEY`, `QBIT_URL/USER/PASS`, `TARGET_CHAT_ID`
+(group JID, get it with `!chatid`), `TIMEZONE`, `ADMIN_NUMBER`, `WEBHOOK_PORT/TOKEN`,
+`QUIET_HOURS`, `JELLYFIN_URL/API_KEY`, `OPTIMIZE_WINDOW`.
+
+One-time host config:
+
+- Sudoers rule (Jellyfin runs on systemd, everything else is Docker/pm2):
+  `marko_mald ALL=(ALL) NOPASSWD: /bin/systemctl restart jellyfin`
+  in `/etc/sudoers.d/marcobot-jellyfin`
+- Webhooks registered in Radarr/Sonarr (Settings → Connect) and Jellyseerr
+  (Settings → Notifications → Webhook), name "Marcobot", URL
+  `http://<host>:3010/hooks/<radarr|sonarr|jellyseerr>?token=<WEBHOOK_TOKEN>`
+- Jellyseerr scans run as the dedicated Jellyfin user `jellyseerr-svc`
+  (never tie them to a personal account — deleting it silently breaks
+  availability detection)
+
+## Media policy (Radarr)
+
+Streaming-first, low disk (decided 2026-07-03):
+
+- Profile HD-1080p: **WEB 1080p only** (preferred + cutoff), HDTV-1080p fallback.
+  **Bluray disallowed entirely** — if only Bluray exists, the movie waits for a
+  WEB release.
+- All 1080p qualities capped at preferred 40 / max 48 MB/min (≈8 GB ceiling for
+  a 167-min film; ≈6 GB for 2 h).
+- Latino-audio custom format keeps its scoring.
+- Target library format: H.264 8-bit + AAC 2.0 in MKV (Media Manager enforces
+  it post-download) → direct play everywhere, no transcoding.
+
+## Data files (`data/`, gitignored)
+
+- `notify-queue.json` — notifications held during quiet hours
+- `optimizer-state.json` — night worker state (current job, failed files, night stats)
+- `preferences.json` — agent memory (standing decisions, preferences)
