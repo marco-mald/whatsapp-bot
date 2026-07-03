@@ -89,13 +89,14 @@ function getSession(key) {
   return s;
 }
 
-function buildContext({ user, isAdminSender, isGroup, mode }) {
+function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
   const name = user?.displayName || (isAdminSender ? 'Marco' : 'desconocido');
   const lines = [
     `Hablas con: ${name}` +
       (user ? ` (jellyseerrId ${user.jellyseerrId})` : '') +
       (isAdminSender ? ' — es el administrador' : '') +
       `, por ${isGroup ? 'grupo' : 'mensaje directo'}.`,
+    `ID de este chat (por si te lo preguntan): ${chatJid}`,
   ];
   if (mode === 'restricted') {
     lines.push(
@@ -180,7 +181,7 @@ async function messageHandler(sock, msg) {
 
   console.log(`[NL] ${user?.displayName || senderPhone} (${mode}) @ ${msg.key.remoteJid}: ${cleanText.slice(0, 80)}`);
 
-  const context = buildContext({ user, isAdminSender, isGroup, mode });
+  const context = buildContext({ user, isAdminSender, isGroup, mode, chatJid: msg.key.remoteJid });
   await runClaude(sock, msg, { text: cleanText, replyJid, sessionKey, mode, context });
 }
 

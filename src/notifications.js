@@ -70,21 +70,36 @@ function saveQueue(queue) {
   fs.writeFileSync(QUEUE_PATH, JSON.stringify(queue, null, 1));
 }
 
-async function deliver({ text, imageUrl }) {
-  const chatId = process.env.TARGET_CHAT_ID;
-  const sock = sockRef?.current;
-  if (!chatId || !sock) throw new Error('sin socket activo o TARGET_CHAT_ID');
+// TARGET_CHAT_ID accepts a comma-separated list of group JIDs
+function targetChatIds() {
+  return (process.env.TARGET_CHAT_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
+}
 
+async function deliver({ text, imageUrl }) {
+  const chatIds = targetChatIds();
+  const sock = sockRef?.current;
+  if (!chatIds.length || !sock) throw new Error('sin socket activo o TARGET_CHAT_ID');
+
+  let image = null;
   if (imageUrl) {
     try {
       const res = await axios.get(imageUrl, { responseType: 'arraybuffer', timeout: 10000 });
-      await sock.sendMessage(chatId, { image: Buffer.from(res.data), caption: text });
-      return;
+      image = Buffer.from(res.data);
     } catch {
       // fall back to plain text
     }
   }
-  await sock.sendMessage(chatId, { text });
+
+  let delivered = 0;
+  for (const chatId of chatIds) {
+    try {
+      await sock.sendMessage(chatId, image ? { image, caption: text } : { text });
+      delivered++;
+    } catch (err) {
+      console.error(`[Notify] Error enviando a ${chatId}:`, err.message);
+    }
+  }
+  if (!delivered) throw new Error('no se pudo entregar a ningún chat');
 }
 
 // Main entry point: sends now, or queues during quiet hours.
@@ -133,4 +148,4 @@ function setupNotifications(ref) {
   );
 }
 
-module.exports = { setupNotifications, notify, inQuietHours, inTimeWindow };
+module.exports = { setupNotifications, notify, inQuietHours, inTimeWindow, targetChatIds };

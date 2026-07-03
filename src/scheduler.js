@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const axios = require('axios');
 const jellyseerr = require('./services/jellyseerr');
+const { targetChatIds } = require('./notifications');
 
 function mediaTypeLabel(mediaType) {
   return mediaType === 'movie' ? '🎬 Película' : '📺 Serie';
@@ -12,8 +13,8 @@ function releaseYear(media) {
 }
 
 async function sendTrending(sockRef) {
-  const chatId = process.env.TARGET_CHAT_ID;
-  if (!chatId) {
+  const chatIds = targetChatIds();
+  if (!chatIds.length) {
     console.warn('[Scheduler] TARGET_CHAT_ID no configurado. Saltando notificación trending.');
     return;
   }
@@ -33,10 +34,8 @@ async function sendTrending(sockRef) {
 
   if (!trending.length) return;
 
-  await sockRef.current.sendMessage(chatId, {
-    text: '🌟 *Sugerencias de la semana* 🌟\n_Los picks de este domingo:_\n\n¿Te interesa algo? Pídelo en: https://pedir.kiguisore.com',
-  });
-
+  // Build every item once (poster download included), then fan out per group
+  const items = [];
   for (const media of trending) {
     const title = media.title || media.name;
     const year = releaseYear(media);
@@ -49,22 +48,34 @@ async function sendTrending(sockRef) {
     const caption =
       `${mediaTypeLabel(media.mediaType)} *${title}* (${year})\n\n${overview}`.trim();
 
-    try {
-      if (media.posterPath) {
+    let image = null;
+    if (media.posterPath) {
+      try {
         const url = `https://image.tmdb.org/t/p/w500${media.posterPath}`;
         const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
-        await sockRef.current.sendMessage(chatId, { image: Buffer.from(res.data), caption });
-      } else {
-        await sockRef.current.sendMessage(chatId, { text: caption });
-      }
-    } catch (err) {
-      console.error('[Scheduler] Error enviando media trending:', err.message);
-      try {
-        await sockRef.current.sendMessage(chatId, { text: caption });
+        image = Buffer.from(res.data);
       } catch {}
     }
+    items.push({ caption, image });
+  }
 
-    await new Promise((r) => setTimeout(r, 1500));
+  for (const chatId of chatIds) {
+    try {
+      await sockRef.current.sendMessage(chatId, {
+        text: '🌟 *Sugerencias de la semana* 🌟\n_Los picks de este domingo:_\n\n¿Te interesa algo? Pídelo en: https://pedir.kiguisore.com',
+      });
+
+      for (const { caption, image } of items) {
+        try {
+          await sockRef.current.sendMessage(chatId, image ? { image, caption } : { text: caption });
+        } catch (err) {
+          console.error('[Scheduler] Error enviando media trending:', err.message);
+        }
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+    } catch (err) {
+      console.error(`[Scheduler] Error enviando trending a ${chatId}:`, err.message);
+    }
   }
 }
 
