@@ -40,8 +40,9 @@ Admin only (`ADMIN_NUMBER` in `.env`):
 - `!claude` — natural-language session with the full MCP toolset (`exit()` / `!salir` to end)
 - `!chatid` — show the current chat's ID
 
-Users are hardcoded in [src/users.js](src/users.js) (phone → Jellyseerr account);
-by design — 7 fixed users, not meant to scale.
+Users live in `data/users.local.json` (gitignored; phone → Jellyseerr account,
+loaded by [src/users.js](src/users.js)); by design — a handful of fixed users,
+not meant to scale.
 
 ## Automatic behavior
 
@@ -107,7 +108,7 @@ cd mcp && uv venv && uv pip install -e .
 One-time host config:
 
 - Sudoers rule (Jellyfin runs on systemd, everything else is Docker/pm2):
-  `marko_mald ALL=(ALL) NOPASSWD: /bin/systemctl restart jellyfin`
+  `<user> ALL=(ALL) NOPASSWD: /bin/systemctl restart jellyfin`
   in `/etc/sudoers.d/marcobot-jellyfin`
 - Webhooks registered in Radarr/Sonarr (Settings → Connect) and Jellyseerr
   (Settings → Notifications → Webhook), name "Marcobot", URL
@@ -131,6 +132,7 @@ Streaming-first, low disk (decided 2026-07-03):
 
 ## Data files (`data/`, gitignored)
 
+- `users.local.json` — WhatsApp phone → Jellyseerr account map (see src/users.js)
 - `notify-queue.json` — notifications held during quiet hours
 - `optimizer-state.json` — night worker state (current job, failed files, night stats)
 - `preferences.json` — agent memory (standing decisions, preferences)
