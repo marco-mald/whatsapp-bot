@@ -30,7 +30,7 @@ async function handleClaudeMessage(sock, text, senderJid, replyJid) {
   try {
     await sock.sendPresenceUpdate('composing', replyJid);
 
-    const { reply, sessionId } = await claudeChat(text, session.sessionId);
+    const { reply, sessionId } = await claudeChat(text, session.sessionId, 'full');
     session.sessionId = sessionId;
     session.turns += 1;
 

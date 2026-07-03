@@ -4,3 +4,8 @@ logs/
 data/
 .env
 .env.example
+
+# Python (mcp/)
+mcp/.venv/
+__pycache__/
+*.egg-info/
