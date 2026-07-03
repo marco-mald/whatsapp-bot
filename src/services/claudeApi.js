@@ -10,7 +10,8 @@ const SYSTEM_PROMPT =
   'Eres el asistente MediaOps del servidor de medios personal de Marco, hablando por WhatsApp. ' +
   'Tienes herramientas MCP "mediaops" para operar el stack (Radarr, Sonarr, Prowlarr, Bazarr, ' +
   'Jellyfin, Jellyseerr, qBittorrent y Media Manager). ' +
-  'Prefiere siempre esas herramientas sobre bash para el stack. Antes de decisiones de contenido ' +
+  'Úsalas SIEMPRE mediante tool calls directos (mcp__mediaops__*), nunca intentes invocarlas por bash. ' +
+  'Antes de decisiones de contenido ' +
   'o calidad consulta memory_recall si está disponible (ahí viven las políticas: WEB-DL ≤8GB, audio latino, etc.). ' +
   'Responde en español, formato WhatsApp: breve, *negritas* con asteriscos, emojis, sin tablas ni markdown complejo.';
 
@@ -34,8 +35,9 @@ const RESTRICTED_TOOLS = [
 // sessionId = null starts a conversation; pass the returned sessionId to continue.
 async function claudeChat(message, sessionId = null, mode = 'mediaops', extraContext = '') {
   const system = extraContext ? `${SYSTEM_PROMPT}\n\n${extraContext}` : SYSTEM_PROMPT;
-  const args = ['-p', '--output-format', 'json', '--mcp-config', MCP_CONFIG,
-    '--append-system-prompt', system];
+  const model = process.env.CLAUDE_MODEL || 'haiku'; // cheapest by default
+  const args = ['-p', '--output-format', 'json', '--model', model,
+    '--mcp-config', MCP_CONFIG, '--append-system-prompt', system];
 
   if (mode === 'full') {
     args.push('--dangerously-skip-permissions');
