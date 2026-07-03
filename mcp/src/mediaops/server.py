@@ -13,7 +13,16 @@ import json
 from mcp.server.fastmcp import FastMCP
 
 from .inventory import SERVICE_IDS, find_service
-from .services import arr_media, diagnostics, jellyseerr, process, qbittorrent
+from .services import (
+    arr_media,
+    bazarr,
+    diagnostics,
+    jellyseerr,
+    mediamanager,
+    process,
+    prowlarr,
+    qbittorrent,
+)
 
 mcp = FastMCP("mediaops")
 
@@ -175,6 +184,82 @@ async def library_missing(limit: int = 15) -> str:
         return _dumps(await arr_media.missing(limit))
     except Exception as err:
         return f"library_missing failed: {err}"
+
+
+@mcp.tool()
+async def subtitles_missing(limit: int = 20) -> str:
+    """Movies and episodes with missing subtitles (Bazarr), including which
+    languages are missing and the ids needed for subtitles_search."""
+    try:
+        return _dumps(await bazarr.wanted(limit))
+    except Exception as err:
+        return f"subtitles_missing failed: {err}"
+
+
+@mcp.tool()
+async def subtitles_search(media_type: str, item_id: int) -> str:
+    """Trigger a subtitle search for one item. media_type: 'movie' (item_id =
+    radarrId from subtitles_missing) or 'episode' (item_id = sonarrEpisodeId).
+    Bazarr downloads the best subtitle automatically if found."""
+    try:
+        if media_type == "movie":
+            return await bazarr.search_movie(item_id)
+        if media_type == "episode":
+            return await bazarr.search_episode(item_id)
+        return "media_type must be 'movie' or 'episode'"
+    except Exception as err:
+        return f"subtitles_search failed: {err}"
+
+
+@mcp.tool()
+async def indexers_health() -> str:
+    """All Prowlarr indexers with their state: enabled, temporarily disabled
+    due to failures (disabledTill), and the most recent failure reason."""
+    try:
+        return _dumps(await prowlarr.indexers())
+    except Exception as err:
+        return f"indexers_health failed: {err}"
+
+
+@mcp.tool()
+async def indexers_test() -> str:
+    """Run a live connectivity test against every Prowlarr indexer (takes up
+    to a minute). Returns pass/fail with error details per indexer."""
+    try:
+        return _dumps(await prowlarr.test_all())
+    except Exception as err:
+        return f"indexers_test failed: {err}"
+
+
+@mcp.tool()
+async def optimization_report(rescan: bool = False) -> str:
+    """Audio-normalization state of the whole library (Media Manager): file
+    counts by status and the list pending normalization ('needs-fix' or
+    'no-aac'), with the file_id needed for optimization_run. rescan=True
+    re-analyzes every file (slow); otherwise uses the last scan."""
+    try:
+        return _dumps(await mediamanager.report(rescan))
+    except Exception as err:
+        return f"optimization_report failed: {err}"
+
+
+@mcp.tool()
+async def optimization_run(file_id: str) -> str:
+    """Normalize one file's audio via Media Manager (AAC track, correct
+    default, strip extras). Returns a job_id to follow with optimization_job."""
+    try:
+        return _dumps(await mediamanager.normalize(file_id))
+    except Exception as err:
+        return f"optimization_run failed: {err}"
+
+
+@mcp.tool()
+async def optimization_job(job_id: str) -> str:
+    """Progress and log tail of a Media Manager normalization job."""
+    try:
+        return _dumps(await mediamanager.job_status(job_id))
+    except Exception as err:
+        return f"optimization_job failed: {err}"
 
 
 def main() -> None:
