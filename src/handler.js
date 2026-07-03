@@ -1,5 +1,6 @@
 const { claudeChat } = require('./services/claudeApi');
 const { getUser } = require('./users');
+const { tryAcquire, release, REJECT_MESSAGE } = require('./ratelimit');
 
 // Natural-language-only router with least-privilege access:
 //   - Admin surfaces (Marco's DM + the "Debug" group): every message → Claude
@@ -100,10 +101,12 @@ function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
   ];
   if (mode === 'restricted') {
     lines.push(
-      'Permisos de este usuario: SOLO consultar estado y pedir contenido. ' +
+      'Permisos de este usuario: consultar estado, pedir contenido y agregar subtítulos. ' +
         `Cuando pida una película/serie usa media_add con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} ` +
-        'para que quede a su nombre. No tienes herramientas de administración en esta conversación; ' +
-        'si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco.'
+        'para que quede a su nombre. Si pide subtítulos de algo, usa subtitles_search. ' +
+        'La biblioteca prefiere audio en español (latino) cuando existe; si solo hay en inglés, ' +
+        'avísale y ofrécele agregar subtítulos en español. No tienes herramientas de administración ' +
+        'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco.'
     );
   }
   return lines.join('\n');
@@ -179,10 +182,21 @@ async function messageHandler(sock, msg) {
   const cleanText = isGroup ? stripBotMention(text) : text;
   if (!cleanText) return;
 
+  const gate = tryAcquire(senderPhone, { admin: mode === 'full' });
+  if (!gate.ok) {
+    console.log(`[NL] Rechazado (${gate.reason}): ${user?.displayName || senderPhone}`);
+    await sock.sendMessage(replyJid, { text: REJECT_MESSAGE[gate.reason] });
+    return;
+  }
+
   console.log(`[NL] ${user?.displayName || senderPhone} (${mode}) @ ${msg.key.remoteJid}: ${cleanText.slice(0, 80)}`);
 
   const context = buildContext({ user, isAdminSender, isGroup, mode, chatJid: msg.key.remoteJid });
-  await runClaude(sock, msg, { text: cleanText, replyJid, sessionKey, mode, context });
+  try {
+    await runClaude(sock, msg, { text: cleanText, replyJid, sessionKey, mode, context });
+  } finally {
+    release(senderPhone);
+  }
 }
 
 module.exports = { messageHandler, registerBotIdentity, resolveAdminGroup };

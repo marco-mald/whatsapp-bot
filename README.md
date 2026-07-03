@@ -34,15 +34,20 @@ tiers enforced at the platform level (per-run MCP tool allowlists, not prompts):
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
 | Admin DM + group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 27 tools + unrestricted CLI |
-| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query status + request media: `library_search`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing` |
+| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query + request media + add subtitles: `library_search`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing`, `subtitles_search` |
 | DMs from registered non-admin users | Registered users | `restricted` | Same as above |
 | Unknown numbers | — | — | Ignored entirely |
 
 - Requests are attributed: each run carries the speaker's identity, and
   `media_add` is called with their `jellyseerr_user_id`.
 - Conversations keep context per chat+user for 20 min (`exit()` or `reset` to clear).
-- Every agent run costs money (~$0.05–0.35) — that's why groups require a
-  mention and unknown numbers are dropped silently.
+- Every agent run costs money — that's why groups require a mention and unknown
+  numbers are dropped silently.
+- Rate limiting ([src/ratelimit.js](src/ratelimit.js)): one run at a time per
+  user (single-flight — a second message while one is in flight gets a "wait"
+  reply), global cap `MAX_CONCURRENT_RUNS` (default 2, protects CPU/streaming),
+  and a generous soft daily cap `DAILY_MSG_LIMIT` (default 40). The admin is
+  exempt from the global and daily caps.
 - Registered users live in `data/users.local.json` (gitignored; phone →
   Jellyseerr account, loaded by [src/users.js](src/users.js)).
 - Chat JIDs show up in the pm2 logs (`[NL] <user> (mode) @ <jid>: ...`) — use

@@ -25,6 +25,7 @@ const RESTRICTED_TOOLS = [
   'library_missing',
   'system_status',
   'subtitles_missing',
+  'subtitles_search', // convenience: users can add subs to their own content
 ].map((t) => `mcp__mediaops__${t}`).join(',');
 
 // Calls the local `claude` CLI in print mode. Modes:
