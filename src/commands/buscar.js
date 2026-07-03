@@ -1,6 +1,6 @@
 const axios = require('axios');
 const jellyseerr = require('../services/jellyseerr');
-const db = require('../db');
+const { getUser } = require('../users');
 
 // "chatId:participantId" -> { results: [], expires: timestamp }
 const pendingSearches = new Map();
@@ -39,9 +39,9 @@ async function handleBuscar(sock, msg, query) {
   const chatId = msg.key.remoteJid;
   const senderJid = msg.key.participant || msg.key.remoteJid;
 
-  if (!db.getUser(senderJid)) {
+  if (!getUser(senderJid, msg.key.senderPn)) {
     await sock.sendMessage(chatId, {
-      text: '⚠️ Necesitas vincular tu cuenta antes de pedir contenido.\n\nUsa *!vincular <tu_usuario_jellyseerr>* para hacerlo.',
+      text: '⚠️ Tu número no está registrado. Pídele a Marco que te agregue.',
     });
     return;
   }
@@ -115,9 +115,8 @@ async function handleSelection(sock, msg, numberStr) {
   const title = media.title || media.name;
   const year = releaseYear(media);
 
-  // Resolve linked Jellyseerr user
   const senderJid = msg.key.participant || msg.key.remoteJid;
-  const linkedUser = db.getUser(senderJid);
+  const linkedUser = getUser(senderJid, msg.key.senderPn);
   const userId = linkedUser?.jellyseerrId || null;
 
   // Show poster while requesting

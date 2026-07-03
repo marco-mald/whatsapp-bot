@@ -1,7 +1,6 @@
 const cron = require('node-cron');
 const axios = require('axios');
 const jellyseerr = require('./services/jellyseerr');
-const qbittorrent = require('./services/qbittorrent');
 
 function mediaTypeLabel(mediaType) {
   return mediaType === 'movie' ? '🎬 Película' : '📺 Serie';
@@ -12,10 +11,15 @@ function releaseYear(media) {
   return date.split('-')[0] || '?';
 }
 
-async function sendTrending(sock) {
+async function sendTrending(sockRef) {
   const chatId = process.env.TARGET_CHAT_ID;
   if (!chatId) {
     console.warn('[Scheduler] TARGET_CHAT_ID no configurado. Saltando notificación trending.');
+    return;
+  }
+
+  if (!sockRef.current) {
+    console.warn('[Scheduler] Sin socket activo. Saltando notificación trending.');
     return;
   }
 
@@ -29,7 +33,7 @@ async function sendTrending(sock) {
 
   if (!trending.length) return;
 
-  await sock.sendMessage(chatId, {
+  await sockRef.current.sendMessage(chatId, {
     text: '🌟 *Sugerencias de la semana* 🌟\n_Los picks de este domingo:_\n\n¿Te interesa algo? Pídelo en: https://pedir.kiguisore.com',
   });
 
@@ -49,90 +53,29 @@ async function sendTrending(sock) {
       if (media.posterPath) {
         const url = `https://image.tmdb.org/t/p/w500${media.posterPath}`;
         const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
-        await sock.sendMessage(chatId, { image: Buffer.from(res.data), caption });
+        await sockRef.current.sendMessage(chatId, { image: Buffer.from(res.data), caption });
       } else {
-        await sock.sendMessage(chatId, { text: caption });
+        await sockRef.current.sendMessage(chatId, { text: caption });
       }
     } catch (err) {
       console.error('[Scheduler] Error enviando media trending:', err.message);
-      // Fallback: send text only
       try {
-        await sock.sendMessage(chatId, { text: caption });
+        await sockRef.current.sendMessage(chatId, { text: caption });
       } catch {}
     }
 
-    // Avoid flooding
     await new Promise((r) => setTimeout(r, 1500));
   }
 }
 
-const COMPLETED_STATES = new Set([
-  'uploading', 'stalledUP', 'pausedUP', 'queuedUP', 'forcedUP', 'checkingUP', 'moving',
-]);
-
-function isCompleted(torrent) {
-  return COMPLETED_STATES.has(torrent.state) || torrent.progress >= 1;
-}
-
-async function checkCompletedDownloads(sock, notifiedHashes, isFirstRun) {
-  const chatId = process.env.TARGET_CHAT_ID;
-  if (!chatId) return;
-
-  let torrents;
-  try {
-    torrents = await qbittorrent.getTorrents();
-  } catch (err) {
-    console.error('[Watcher] Error al obtener torrents:', err.message);
-    return;
-  }
-
-  for (const t of torrents) {
-    if (!isCompleted(t)) continue;
-    if (notifiedHashes.has(t.hash)) continue;
-
-    notifiedHashes.add(t.hash);
-
-    if (isFirstRun) continue; // seed silently on startup
-
-    console.log(`[Watcher] Descarga completada: ${t.name}`);
-    try {
-      await sock.sendMessage(chatId, {
-        text:
-          `✅ *Descarga completada* 🎉\n\n` +
-          `📁 *${t.name}*\n\n` +
-          `Ya está listo en tu biblioteca 👇\n` +
-          `🎬 https://ver.kiguisore.com`,
-      });
-    } catch (err) {
-      console.error('[Watcher] Error enviando notificación:', err.message);
-    }
-  }
-}
-
-function setupDownloadWatcher(sock) {
-  const notifiedHashes = new Set();
-  let isFirstRun = true;
-
-  const run = () =>
-    checkCompletedDownloads(sock, notifiedHashes, isFirstRun).finally(() => {
-      isFirstRun = false;
-    });
-
-  run(); // seed immediately on startup
-  setInterval(run, 2 * 60 * 1000); // then every 2 minutes
-
-  console.log('[Watcher] Vigilando descargas completadas (cada 2 min)');
-}
-
-function setupScheduler(sock) {
+function setupScheduler(sockRef) {
   const timezone = process.env.TIMEZONE || 'America/Mexico_City';
 
-  // Every Sunday at 11:00am
   cron.schedule(
     '0 11 * * 0',
     () => {
       console.log('[Scheduler] Enviando sugerencias trending...');
-      sendTrending(sock).catch((err) =>
+      sendTrending(sockRef).catch((err) =>
         console.error('[Scheduler] Error fatal en sendTrending:', err)
       );
     },
@@ -142,4 +85,4 @@ function setupScheduler(sock) {
   console.log(`[Scheduler] Notificaciones programadas: domingos 11:00am (${timezone})`);
 }
 
-module.exports = { setupScheduler, setupDownloadWatcher, sendTrending };
+module.exports = { setupScheduler, sendTrending };

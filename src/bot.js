@@ -5,15 +5,17 @@ const {
   useMultiFileAuthState,
   DisconnectReason,
   fetchLatestBaileysVersion,
-  makeCacheableSignalKeyStore,
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const { messageHandler } = require('./handler');
-const { setupScheduler, setupDownloadWatcher } = require('./scheduler');
+const { setupScheduler } = require('./scheduler');
 
 const logger = pino({ level: 'silent' });
 let schedulerInitialized = false;
+
+// Mutable ref so scheduler/watcher always use the current active socket
+const sockRef = { current: null };
 
 // Stores sent messages so Baileys can re-encrypt on retry requests from devices
 // that failed to decrypt (fixes "Esperando el mensaje" on mobile)
@@ -41,10 +43,11 @@ async function connectToWhatsApp() {
     },
   });
 
+  sockRef.current = sock;
+
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    // Cache all messages (including outgoing) for retry support
     for (const msg of messages) {
       if (msg.message && msg.key?.id) {
         messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message);
@@ -58,7 +61,6 @@ async function connectToWhatsApp() {
     for (const msg of messages) {
       if (msg.key.fromMe) continue;
 
-      // For catch-up messages, skip anything older than 10 minutes
       if (type === 'append') {
         const msgTime = Number(msg.messageTimestamp || 0) * 1000;
         if (msgTime < TEN_MIN_AGO) continue;
@@ -93,8 +95,7 @@ async function connectToWhatsApp() {
       console.log('[Bot] ✅ Conectado a WhatsApp');
 
       if (!schedulerInitialized) {
-        setupScheduler(sock);
-        setupDownloadWatcher(sock);
+        setupScheduler(sockRef);
         schedulerInitialized = true;
       }
     }
