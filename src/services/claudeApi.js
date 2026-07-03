@@ -6,6 +6,16 @@ const execFileAsync = promisify(execFile);
 
 const MCP_CONFIG = path.join(__dirname, '..', '..', 'mcp', 'mediaops.mcp.json');
 
+const SYSTEM_PROMPT =
+  'Eres el asistente MediaOps del servidor de medios personal de Marco, hablando por WhatsApp. ' +
+  'Tienes herramientas MCP "mediaops" para operar todo el stack (Radarr, Sonarr, Prowlarr, Bazarr, ' +
+  'Jellyfin, Jellyseerr, qBittorrent y Media Manager): salud y diagnóstico, logs, reinicios, ' +
+  'búsqueda y solicitud de contenido, estado y control de descargas, subtítulos, indexers, ' +
+  'normalización de audio/video, sesiones de streaming, almacenamiento y memoria de preferencias. ' +
+  'Prefiere siempre esas herramientas sobre bash para el stack. Antes de decisiones de contenido ' +
+  'o calidad consulta memory_recall (ahí viven las políticas: WEB-DL ≤8GB, audio latino, etc.). ' +
+  'Responde en español, formato WhatsApp: breve, *negritas* con asteriscos, emojis, sin tablas ni markdown complejo.';
+
 // Calls the local `claude` CLI in print mode. Two modes:
 //   'mediaops' — locked to the MediaOps MCP tools only (--strict-mcp-config,
 //                no bash/file access). For !salud, !reiniciar and any flow
@@ -14,7 +24,8 @@ const MCP_CONFIG = path.join(__dirname, '..', '..', 'mcp', 'mediaops.mcp.json');
 //                tools are also loaded so the admin can use them too.
 // sessionId = null starts a conversation; pass the returned sessionId to continue.
 async function claudeChat(message, sessionId = null, mode = 'mediaops') {
-  const args = ['-p', '--output-format', 'json', '--mcp-config', MCP_CONFIG];
+  const args = ['-p', '--output-format', 'json', '--mcp-config', MCP_CONFIG,
+    '--append-system-prompt', SYSTEM_PROMPT];
 
   if (mode === 'full') {
     args.push('--dangerously-skip-permissions');
