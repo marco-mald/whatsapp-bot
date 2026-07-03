@@ -10,6 +10,8 @@ const pino = require('pino');
 const qrcode = require('qrcode-terminal');
 const { messageHandler } = require('./handler');
 const { setupScheduler } = require('./scheduler');
+const { setupNotifications } = require('./notifications');
+const { setupWebhooks } = require('./webhooks');
 
 const logger = pino({ level: 'silent' });
 let schedulerInitialized = false;
@@ -96,6 +98,8 @@ async function connectToWhatsApp() {
 
       if (!schedulerInitialized) {
         setupScheduler(sockRef);
+        setupNotifications(sockRef);
+        setupWebhooks();
         schedulerInitialized = true;
       }
     }
