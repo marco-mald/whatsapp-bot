@@ -85,6 +85,7 @@ async function notify(text, { imageUrl } = {}) {
     return 'queued';
   }
   await deliver({ text, imageUrl });
+  console.log(`[Notify] Enviado: ${text.split('\n')[0].slice(0, 70)}`);
   return 'sent';
 }
 

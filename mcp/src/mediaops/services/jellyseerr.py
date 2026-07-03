@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -44,7 +45,8 @@ def _year(item: dict) -> str:
 
 
 async def search(query: str, limit: int = 8) -> list[dict]:
-    data = await _get("/api/v1/search", {"query": query})
+    # Jellyseerr rejects '+' for spaces in this endpoint; it requires %20
+    data = await _get(f"/api/v1/search?query={quote(query)}")
     results = []
     for item in data.get("results", []):
         if item.get("mediaType") not in ("movie", "tv"):
