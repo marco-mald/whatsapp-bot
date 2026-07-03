@@ -99,8 +99,12 @@ function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
       `, por ${isGroup ? 'grupo' : 'mensaje directo'}.`,
     `ID de este chat (por si te lo preguntan): ${chatJid}`,
   ];
-  if (user?.apodo) {
-    lines.push(`Dirígete a esta persona de forma cálida como "${user.apodo}".`);
+  if (Array.isArray(user?.notas) && user.notas.length) {
+    const notas = user.notas.slice(0, 5).join('; ');
+    lines.push(
+      `Datos personales de esta persona (para dar calidez o bromear con naturalidad SOLO cuando ` +
+        `venga al tema — nunca los enumeres, nunca los fuerces, úsalos con criterio): ${notas}.`
+    );
   }
   if (mode === 'restricted') {
     lines.push(
