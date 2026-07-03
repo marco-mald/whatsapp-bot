@@ -48,6 +48,11 @@ tiers enforced at the platform level (per-run MCP tool allowlists, not prompts):
   reply), global cap `MAX_CONCURRENT_RUNS` (default 2, protects CPU/streaming),
   and a generous soft daily cap `DAILY_MSG_LIMIT` (default 40). The admin is
   exempt from the global and daily caps.
+- Off-topic moderation ([src/moderation.js](src/moderation.js)): the bot is for
+  media, not banter. The LLM escalates a user who keeps messing around — warn →
+  roast → append a `[[TIMEOUT:15]]` control token. The handler enforces the ban
+  deterministically (timed-out users are dropped silently for 15 min) and strips
+  the token from the reply. Admin is immune; bans are in-memory (reset on restart).
 - Registered users live in `data/users.local.json` (gitignored; phone →
   Jellyseerr account, loaded by [src/users.js](src/users.js)).
 - Chat JIDs show up in the pm2 logs (`[NL] <user> (mode) @ <jid>: ...`) — use

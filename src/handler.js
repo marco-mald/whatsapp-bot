@@ -1,6 +1,11 @@
 const { claudeChat } = require('./services/claudeApi');
 const { getUser } = require('./users');
 const { tryAcquire, release, REJECT_MESSAGE } = require('./ratelimit');
+const { isTimedOut, timeout } = require('./moderation');
+
+// Control token the LLM appends when it decides to time out an abusive user.
+// Stripped from the visible reply; the ban is enforced deterministically here.
+const TIMEOUT_TOKEN = /\[\[TIMEOUT:(\d{1,3})\]\]/;
 
 // Natural-language-only router with least-privilege access:
 //   - Admin surfaces (Marco's DM + the "Debug" group): every message → Claude
@@ -115,19 +120,39 @@ function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
         'avísale y ofrécele agregar subtítulos en español. No tienes herramientas de administración ' +
         'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco.'
     );
+    lines.push(
+      'Tu propósito es el servidor de medios, NO platicar ni que te usen de juguete. ' +
+        'Si esta persona te vacila, te insulta, juega contigo o te escribe cosas random que no ' +
+        'tienen que ver con pelis/series/descargas/subtítulos, escala así:\n' +
+        '1) La primera vez: pídele con buena onda que le pare y que te use para lo del servidor.\n' +
+        '2) Si insiste: clávale una tirada con humor pesado de bro mexicano usando sus datos ' +
+        'personales (estilo albur familiar, sin groserías fuertes de más).\n' +
+        '3) Si AÚN así sigue insistiendo: además de tu respuesta, agrega al final EXACTAMENTE el ' +
+        'texto [[TIMEOUT:15]] (esto lo callará 15 minutos). No expliques el token, solo agrégalo. ' +
+        'Úsalo SOLO para quien claramente está vacilando y no para — jamás en una consulta legítima de medios.'
+    );
   }
   return lines.join('\n');
 }
 
-async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context }) {
+async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context, senderPhone, isAdmin }) {
   const session = getSession(sessionKey);
   try {
     await sock.sendPresenceUpdate('composing', replyJid);
     const { reply, sessionId } = await claudeChat(text, session?.sessionId, mode, context);
     sessions.set(sessionKey, { sessionId, lastUsed: Date.now() });
 
-    const out = reply.length > 59000 ? reply.slice(0, 59000) + '\n\n_[truncado]_' : reply;
-    await sock.sendMessage(replyJid, { text: out });
+    // Moderation: the LLM appends [[TIMEOUT:N]] to ban a persistent abuser.
+    // Enforce the ban here, strip the token from what the user sees. Admin immune.
+    const match = reply.match(TIMEOUT_TOKEN);
+    if (match && !isAdmin) {
+      const mins = timeout(senderPhone, parseInt(match[1], 10));
+      console.log(`[Mod] Timeout ${mins}min a ${senderPhone} (vacile persistente)`);
+    }
+    const visible = reply.replace(TIMEOUT_TOKEN, '').trim();
+
+    const out = visible.length > 59000 ? visible.slice(0, 59000) + '\n\n_[truncado]_' : visible;
+    if (out) await sock.sendMessage(replyJid, { text: out });
   } catch (err) {
     console.error('[NL] Error en run de Claude:', err.message);
     await sock.sendMessage(replyJid, { text: `❌ Algo falló procesando tu mensaje: ${err.message}` });
@@ -179,6 +204,12 @@ async function messageHandler(sock, msg) {
   const mode = isAdminSurface && isAdminSender ? 'full' : 'restricted';
   const sessionKey = `${msg.key.remoteJid}:${senderPhone}`;
 
+  // Timed-out abusers are dropped silently (no reply, no Claude run). Admin immune.
+  if (!isAdminSender && isTimedOut(senderPhone)) {
+    console.log(`[Mod] Ignorado (en timeout): ${user?.displayName || senderPhone}`);
+    return;
+  }
+
   const lower = text.toLowerCase();
   if (lower === 'exit()' || lower === 'reset') {
     sessions.delete(sessionKey);
@@ -200,7 +231,10 @@ async function messageHandler(sock, msg) {
 
   const context = buildContext({ user, isAdminSender, isGroup, mode, chatJid: msg.key.remoteJid });
   try {
-    await runClaude(sock, msg, { text: cleanText, replyJid, sessionKey, mode, context });
+    await runClaude(sock, msg, {
+      text: cleanText, replyJid, sessionKey, mode, context,
+      senderPhone, isAdmin: isAdminSender,
+    });
   } finally {
     release(senderPhone);
   }
