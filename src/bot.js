@@ -8,7 +8,7 @@ const {
 } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const qrcode = require('qrcode-terminal');
-const { messageHandler, registerBotIdentity, resolveAdminGroup } = require('./handler');
+const { messageHandler, registerBotIdentity, resolveAdminGroup, retryPending } = require('./handler');
 const { setupScheduler } = require('./scheduler');
 const { setupNotifications } = require('./notifications');
 const { setupWebhooks } = require('./webhooks');
@@ -98,7 +98,7 @@ async function connectToWhatsApp() {
       console.log('[Bot] ✅ Conectado a WhatsApp');
 
       registerBotIdentity(sock);
-      resolveAdminGroup(sock).catch(() => {});
+      resolveAdminGroup(sock).then(() => retryPending(sock)).catch(() => {});
 
       if (!schedulerInitialized) {
         setupScheduler(sockRef);

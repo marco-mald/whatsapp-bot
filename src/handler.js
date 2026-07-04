@@ -4,6 +4,7 @@ const { getUser } = require('./users');
 const { tryAcquire, release, REJECT_MESSAGE } = require('./ratelimit');
 const { isTimedOut, timeout } = require('./moderation');
 const { friendlyError } = require('./errors');
+const { track, complete, getPending } = require('./inflight');
 
 // Control token the LLM appends when it decides to time out an abusive user.
 // Stripped from the visible reply; the ban is enforced deterministically here.
@@ -153,6 +154,7 @@ async function sendPosters(sock, replyJid, text) {
 
 async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context, senderPhone, isAdmin }) {
   const session = getSession(sessionKey);
+  track(msg, text, mode, senderPhone);
   try {
     await sock.sendPresenceUpdate('composing', replyJid);
     const { reply, sessionId } = await claudeChat(text, session?.sessionId, mode, context);
@@ -179,6 +181,7 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
     );
     await sock.sendMessage(replyJid, { text: friendlyError(err) });
   } finally {
+    complete(msg.key.id);
     await sock.sendPresenceUpdate('paused', replyJid).catch(() => {});
   }
 }
@@ -266,4 +269,37 @@ async function messageHandler(sock, msg) {
   }
 }
 
-module.exports = { messageHandler, registerBotIdentity, resolveAdminGroup };
+async function retryPending(sock) {
+  const pending = getPending();
+  if (!pending.length) return;
+  console.log(`[Handler] Reintentando ${pending.length} mensaje(s) interrumpido(s)...`);
+
+  for (const entry of pending) {
+    const user = getUser(entry.participant || entry.remoteJid);
+    const isAdminSender = Boolean(ADMIN_NUMBER) && entry.senderPhone === ADMIN_NUMBER;
+    const isAdminSurface = adminChatIds.has(entry.remoteJid);
+    const mode = isAdminSurface && isAdminSender ? 'full' : entry.mode;
+    const sessionKey = `${entry.remoteJid}:${entry.senderPhone}`;
+    const context = buildContext({ user, isAdminSender, mode, chatJid: entry.remoteJid });
+
+    const fakeMsg = { key: { id: entry.msgId, remoteJid: entry.remoteJid, participant: entry.participant } };
+
+    console.log(`[Handler] Retry: ${user?.displayName || entry.senderPhone} → "${entry.text.slice(0, 60)}"`);
+    try {
+      await runClaude(sock, fakeMsg, {
+        text: entry.text,
+        replyJid: entry.remoteJid,
+        sessionKey,
+        mode,
+        context,
+        senderPhone: entry.senderPhone,
+        isAdmin: isAdminSender,
+      });
+    } catch (err) {
+      console.error(`[Handler] Retry falló para ${entry.msgId}:`, err.message);
+      complete(entry.msgId);
+    }
+  }
+}
+
+module.exports = { messageHandler, registerBotIdentity, resolveAdminGroup, retryPending };
