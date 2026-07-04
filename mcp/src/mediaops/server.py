@@ -202,6 +202,16 @@ async def downloads_control(action: str, torrent_hash: str = "all") -> str:
 
 
 @mcp.tool()
+async def downloads_clean() -> str:
+    """Remove all completed torrents from qBittorrent (keeps downloaded files).
+    Use when asked to clean up, remove finished torrents, or free the queue."""
+    try:
+        return _dumps(await qbittorrent.delete_completed(delete_files=False))
+    except Exception as err:
+        return f"downloads_clean failed: {err}"
+
+
+@mcp.tool()
 async def media_queue() -> str:
     """Radarr+Sonarr import queues: what is downloading/importing right now
     and, crucially, per-item errors (stuck imports, failed downloads). The

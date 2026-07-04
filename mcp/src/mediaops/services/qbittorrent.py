@@ -64,3 +64,25 @@ async def control(action: str, torrent_hash: str = "all") -> str:
         raise RuntimeError(f"{action} failed: HTTP {res.status_code}")
     finally:
         await client.aclose()
+
+
+async def delete_completed(delete_files: bool = False) -> dict:
+    """Remove all completed torrents (progress=100%) from qBittorrent.
+    By default keeps downloaded files on disk."""
+    client = await _client()
+    try:
+        res = await client.get("/api/v2/torrents/info")
+        res.raise_for_status()
+        completed = [t for t in res.json() if t["progress"] >= 1.0]
+        if not completed:
+            return {"deleted": 0, "message": "No hay torrents completados"}
+        hashes = "|".join(t["hash"] for t in completed)
+        res = await client.post(
+            "/api/v2/torrents/delete",
+            data={"hashes": hashes, "deleteFiles": str(delete_files).lower()},
+        )
+        res.raise_for_status()
+        names = [t["name"] for t in completed]
+        return {"deleted": len(completed), "names": names, "files_deleted": delete_files}
+    finally:
+        await client.aclose()
