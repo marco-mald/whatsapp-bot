@@ -301,7 +301,7 @@ async function messageHandler(sock, msg) {
   if (!cleanText) return;
 
   // Intercept "no" responses before calling Claude — react with 👍 and save the API call.
-  const NO_PATTERNS = /^(no|NO|nel|nah|nop|nope|mejor no|después|despues|déjalo|dejalo|ya no|naa|simon que no|nel pastel|va que no)\.?$/i;
+  const NO_PATTERNS = /^(no|nel|nah|nop|nope|mejor no|después|despues|déjalo|dejalo|ya no|naa|simon que no|nel pastel|va que no|nel mergas|ntc|neta que no|pas)\.?$/i;
   if (NO_PATTERNS.test(cleanText.trim())) {
     try {
       await sock.sendMessage(replyJid, {
