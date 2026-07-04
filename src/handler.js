@@ -186,7 +186,12 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
     const visible = withPosters.replace(POSTER_TOKEN, '').trim();
 
     const out = visible.length > 59000 ? visible.slice(0, 59000) + '\n\n_[truncado]_' : visible;
-    if (out) await sock.sendMessage(replyJid, { text: out });
+    if (out) {
+      const sent = await sock.sendMessage(replyJid, { text: out });
+      console.log(`[NL] Respuesta enviada (id ${sent?.key?.id || '?'}) a ${replyJid}`);
+    } else {
+      console.warn('[NL] Respuesta vacía del CLI — no se envió nada');
+    }
     await sendPosters(sock, replyJid, withPosters);
   } catch (err) {
     console.error(
