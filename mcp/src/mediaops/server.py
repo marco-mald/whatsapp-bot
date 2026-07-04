@@ -212,6 +212,28 @@ async def downloads_clean() -> str:
 
 
 @mcp.tool()
+async def downloads_delete(hashes: list[str]) -> str:
+    """Remove specific torrents by hash from qBittorrent (keeps downloaded files).
+    Use when the user wants to cancel/remove specific stalled or unwanted torrents.
+    Get hashes from downloads_status first."""
+    try:
+        return _dumps(await qbittorrent.delete_torrents(hashes, delete_files=False))
+    except Exception as err:
+        return f"downloads_delete failed: {err}"
+
+
+@mcp.tool()
+async def media_search_release(tmdb_id: int) -> str:
+    """Trigger Radarr to search for a new release of a movie (automatic search).
+    Use after removing a stalled/dead torrent so Radarr finds an alternative
+    release with more seeders. Get tmdbId from library_search."""
+    try:
+        return _dumps(await arr_media.search_movie(tmdb_id))
+    except Exception as err:
+        return f"media_search_release failed: {err}"
+
+
+@mcp.tool()
 async def media_queue() -> str:
     """Radarr+Sonarr import queues: what is downloading/importing right now
     and, crucially, per-item errors (stuck imports, failed downloads). The

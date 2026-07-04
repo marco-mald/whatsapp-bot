@@ -86,3 +86,32 @@ async def delete_completed(delete_files: bool = False) -> dict:
         return {"deleted": len(completed), "names": names, "files_deleted": delete_files}
     finally:
         await client.aclose()
+
+
+async def delete_torrents(hashes: list[str], delete_files: bool = False) -> dict:
+    """Remove specific torrents by hash from qBittorrent.
+    By default keeps downloaded files on disk."""
+    client = await _client()
+    try:
+        res = await client.get("/api/v2/torrents/info")
+        res.raise_for_status()
+        all_torrents = {t["hash"]: t["name"] for t in res.json()}
+        found = {h: all_torrents[h] for h in hashes if h in all_torrents}
+        not_found = [h for h in hashes if h not in all_torrents]
+
+        if not found:
+            return {"deleted": 0, "not_found": not_found}
+
+        res = await client.post(
+            "/api/v2/torrents/delete",
+            data={"hashes": "|".join(found.keys()), "deleteFiles": str(delete_files).lower()},
+        )
+        res.raise_for_status()
+        return {
+            "deleted": len(found),
+            "names": list(found.values()),
+            "files_deleted": delete_files,
+            "not_found": not_found,
+        }
+    finally:
+        await client.aclose()

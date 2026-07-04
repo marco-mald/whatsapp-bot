@@ -135,6 +135,30 @@ async def unmonitor_movie(tmdb_id: int) -> dict:
     return {"title": match.get("title"), "tmdbId": tmdb_id, "monitored": False}
 
 
+async def _post(app: str, path: str, body: dict | None = None):
+    async with httpx.AsyncClient() as client:
+        res = await client.post(
+            f"{APPS[app]}{path}",
+            headers={"X-Api-Key": _key(app)},
+            json=body or {},
+            timeout=15.0,
+        )
+        res.raise_for_status()
+        return res.json() if res.content else None
+
+
+async def search_movie(tmdb_id: int) -> dict:
+    """Trigger an automatic search in Radarr for a movie by tmdbId.
+    Radarr will look for a new release matching its quality profile."""
+    movies = await _get("radarr", "/movie")
+    match = next((m for m in movies if m.get("tmdbId") == tmdb_id), None)
+    if not match:
+        return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
+
+    await _post("radarr", "/command", {"name": "MoviesSearch", "movieIds": [match["id"]]})
+    return {"title": match.get("title"), "tmdbId": tmdb_id, "status": "search_triggered"}
+
+
 async def missing(limit: int = 15) -> dict:
     params = {"pageSize": limit, "monitored": "true"}
     radarr, sonarr = await asyncio.gather(
