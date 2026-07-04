@@ -141,14 +141,15 @@ Puedes responder SIN herramientas SOLO si:
 
 Todo lo demás → herramientas obligatorias.`;
 
-// Least-privilege toolset for non-admin users: query status and request
-// media — nothing that changes server config, restarts, or deletes.
+// Least-privilege toolset for non-admin users: query + request + manage own downloads.
 const RESTRICTED_TOOLS = [
   'library_search',
   'library_trending',
   'media_add',
   'media_file_info',
   'downloads_status',
+  'downloads_delete',
+  'media_search_release',
   'media_queue',
   'library_missing',
   'system_status',
