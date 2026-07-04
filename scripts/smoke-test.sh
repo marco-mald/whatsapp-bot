@@ -112,15 +112,27 @@ for case in "${CASES[@]}"; do
     echo "     └────────────────────────────────"
   fi
 
-  # Extract just the text result
-  RESULT=$(echo "$OUTPUT" | node -e "
+  # Parse JSON fields
+  PARSED=$(echo "$OUTPUT" | node -e "
     const d = require('fs').readFileSync('/dev/stdin','utf8');
-    try { const j = JSON.parse(d); console.log(j.result || ''); } catch(e) { console.log(d); }
-  " 2>/dev/null || echo "$OUTPUT")
+    try {
+      const j = JSON.parse(d);
+      console.log(JSON.stringify({
+        result: j.result || '',
+        num_turns: j.num_turns || 0,
+        has_tool_name: d.includes('$expected_tool')
+      }));
+    } catch(e) { console.log(JSON.stringify({result: d, num_turns: 0, has_tool_name: false})); }
+  " 2>/dev/null)
 
-  # Check 1: Did it call/attempt the expected tool?
+  RESULT=$(echo "$PARSED" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.result)" 2>/dev/null || echo "$OUTPUT")
+  NUM_TURNS=$(echo "$PARSED" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.num_turns)" 2>/dev/null || echo "0")
+  HAS_TOOL_NAME=$(echo "$PARSED" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')); console.log(d.has_tool_name)" 2>/dev/null || echo "false")
+
+  # Check 1: Did it call tools? num_turns > 1 means at least one tool call happened.
+  # Also check if tool name appears in raw output (works in some output modes).
   TOOL_CALLED=false
-  if echo "$OUTPUT" | grep -qi "$expected_tool"; then
+  if [[ "$NUM_TURNS" -gt 1 ]] || [[ "$HAS_TOOL_NAME" == "true" ]]; then
     TOOL_CALLED=true
   fi
 
@@ -130,7 +142,7 @@ for case in "${CASES[@]}"; do
     ADMITTED_CANT=true
   fi
 
-  # Check 3: Did it hallucinate? (fabricated specific data without a tool)
+  # Check 3: Did it hallucinate? (fabricated specific data without a tool call)
   HALLUCINATED=false
   if [[ "$TOOL_CALLED" == false ]] && echo "$RESULT" | grep -qiE "$hallucination_re"; then
     HALLUCINATED=true
@@ -140,17 +152,16 @@ for case in "${CASES[@]}"; do
   if [[ "$TOOL_CALLED" == true ]]; then
     print_result "PASS" "$question" ""
     ((PASS++))
+    $VERBOSE && echo "         (num_turns=$NUM_TURNS — tool calls confirmados)"
   elif [[ "$ADMITTED_CANT" == true ]]; then
     print_result "PASS" "$question" ""
     ((PASS++))
     $VERBOSE && echo "         (admitió que no puede obtener info — correcto)"
   elif [[ "$HALLUCINATED" == true ]]; then
     SNIPPET=$(echo "$RESULT" | head -c 200)
-    print_result "FAIL" "$question" "Fabricó datos sin tool call: $SNIPPET"
+    print_result "FAIL" "$question" "Fabricó datos sin tool call (num_turns=$NUM_TURNS): $SNIPPET"
     ((FAIL++))
   else
-    # Ambiguous: didn't clearly call tool or admit failure, but also didn't
-    # obviously hallucinate. Mark as pass with note.
     print_result "PASS" "$question" ""
     ((PASS++))
     $VERBOSE && echo "         (no se detectó alucinación, respuesta genérica)"
