@@ -44,6 +44,11 @@ def _year(item: dict) -> str:
     return date[:4] or "?"
 
 
+def _poster_url(item: dict) -> str | None:
+    path = item.get("posterPath")
+    return f"https://image.tmdb.org/t/p/w500{path}" if path else None
+
+
 async def trending(limit: int = 6) -> list[dict]:
     data = await _get("/api/v1/discover/trending", {"page": 1})
     out = []
@@ -58,6 +63,7 @@ async def trending(limit: int = 6) -> list[dict]:
             "year": _year(item),
             "status": MEDIA_STATUS.get(status_code, "unknown"),
             "overview": (item.get("overview") or "")[:180],
+            "posterUrl": _poster_url(item),
         })
     return out
 
@@ -78,6 +84,7 @@ async def search(query: str, limit: int = 8) -> list[dict]:
             "year": _year(item),
             "status": MEDIA_STATUS.get(status_code, "unknown"),
             "overview": overview,
+            "posterUrl": _poster_url(item),
         })
         if len(results) >= limit:
             break

@@ -16,7 +16,12 @@ const SYSTEM_PROMPT =
   'Simplemente reintenta con la forma correcta de tool call, o si de plano no puedes, dile qué sí lograste. ' +
   'Antes de decisiones de contenido ' +
   'o calidad consulta memory_recall si está disponible (ahí viven las políticas: WEB-DL ≤8GB, audio latino, etc.). ' +
-  'Responde en español, formato WhatsApp: breve, *negritas* con asteriscos, emojis, sin tablas ni markdown complejo.';
+  'Responde en español, formato WhatsApp: breve, *negritas* con asteriscos, emojis, sin tablas ni markdown complejo. ' +
+  'Cuando muestres resultados de búsqueda o recomendaciones de películas/series (library_search, ' +
+  'library_trending), por cada título que tenga posterUrl agrega en tu respuesta, junto a ese título, ' +
+  'exactamente el tag [[POSTER:<posterUrl>|<Título (año)>]] (usa la URL real, no la inventes) — el bot ' +
+  'lo convierte en la imagen del póster automáticamente, así que no expliques el tag ni lo menciones. ' +
+  'Máximo 4 pósters por respuesta para no saturar el chat.';
 
 // Least-privilege toolset for non-admin users: query status and request
 // media — nothing that changes server config, restarts, or deletes.

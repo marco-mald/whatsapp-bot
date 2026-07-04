@@ -1,3 +1,4 @@
+const axios = require('axios');
 const { claudeChat } = require('./services/claudeApi');
 const { getUser } = require('./users');
 const { tryAcquire, release, REJECT_MESSAGE } = require('./ratelimit');
@@ -6,6 +7,11 @@ const { isTimedOut, timeout } = require('./moderation');
 // Control token the LLM appends when it decides to time out an abusive user.
 // Stripped from the visible reply; the ban is enforced deterministically here.
 const TIMEOUT_TOKEN = /\[\[TIMEOUT:(\d{1,3})\]\]/;
+
+// Control token the LLM includes per movie/series it presents, so the bot can
+// send the real poster image alongside the text (Claude's output is text-only).
+const POSTER_TOKEN = /\[\[POSTER:([^|\]]+)\|([^\]]+)\]\]/g;
+const MAX_POSTERS = 4;
 
 // Natural-language-only router with least-privilege access:
 //   - Admin surfaces (Marco's DM + the "Debug" group): every message → Claude
@@ -138,6 +144,18 @@ function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
   return lines.join('\n');
 }
 
+async function sendPosters(sock, replyJid, text) {
+  const items = [...text.matchAll(POSTER_TOKEN)].slice(0, MAX_POSTERS);
+  for (const [, url, title] of items) {
+    try {
+      const res = await axios.get(url, { responseType: 'arraybuffer', timeout: 10000 });
+      await sock.sendMessage(replyJid, { image: Buffer.from(res.data), caption: title.trim() });
+    } catch (err) {
+      console.error(`[Handler] Error enviando póster (${title}):`, err.message);
+    }
+  }
+}
+
 async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context, senderPhone, isAdmin }) {
   const session = getSession(sessionKey);
   try {
@@ -152,10 +170,13 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
       const mins = timeout(senderPhone, parseInt(match[1], 10));
       console.log(`[Mod] Timeout ${mins}min a ${senderPhone} (vacile persistente)`);
     }
-    const visible = reply.replace(TIMEOUT_TOKEN, '').trim();
+
+    const withPosters = reply.replace(TIMEOUT_TOKEN, '');
+    const visible = withPosters.replace(POSTER_TOKEN, '').trim();
 
     const out = visible.length > 59000 ? visible.slice(0, 59000) + '\n\n_[truncado]_' : visible;
     if (out) await sock.sendMessage(replyJid, { text: out });
+    await sendPosters(sock, replyJid, withPosters);
   } catch (err) {
     console.error('[NL] Error en run de Claude:', err.message);
     await sock.sendMessage(replyJid, { text: `❌ Algo falló procesando tu mensaje: ${err.message}` });
