@@ -1,3 +1,5 @@
+const fs = require('fs');
+const path = require('path');
 const axios = require('axios');
 const { claudeChat } = require('./services/claudeApi');
 const { getUser } = require('./users');
@@ -34,8 +36,28 @@ const adminChatIds = new Set(
 );
 let botIds = new Set(); // bare numbers/lids identifying the bot itself
 
-// chatJid:senderPhone → { sessionId, lastUsed }
-const sessions = new Map();
+// chatJid:senderPhone → { sessionId, lastUsed }. Persisted to disk so a bot
+// restart doesn't wipe everyone's conversation context (the CLI keeps the
+// transcripts; we only need the sessionId to --resume them).
+const SESSIONS_FILE = path.join(__dirname, '..', 'data', 'sessions.json');
+
+function loadSessions() {
+  try {
+    return new Map(Object.entries(JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'))));
+  } catch {
+    return new Map();
+  }
+}
+
+function saveSessions() {
+  try {
+    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(sessions), null, 2));
+  } catch (err) {
+    console.error('[Handler] No pude guardar sessions.json:', err.message);
+  }
+}
+
+const sessions = loadSessions();
 
 function bare(jid) {
   return (jid || '').split(':')[0].split('@')[0];
@@ -173,6 +195,7 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
     await sock.sendPresenceUpdate('composing', replyJid);
     const { reply, sessionId } = await claudeChat(text, session?.sessionId, mode, context);
     sessions.set(sessionKey, { sessionId, lastUsed: Date.now() });
+    saveSessions();
 
     // Moderation: the LLM appends [[TIMEOUT:N]] to ban a persistent abuser.
     // Enforce the ban here, strip the token from what the user sees. Admin immune.
@@ -261,6 +284,7 @@ async function messageHandler(sock, msg) {
   const lower = text.toLowerCase();
   if (lower === 'exit()' || lower === 'reset') {
     sessions.delete(sessionKey);
+    saveSessions();
     await sock.sendMessage(replyJid, { text: '🔄 Conversación reiniciada.' });
     return;
   }
