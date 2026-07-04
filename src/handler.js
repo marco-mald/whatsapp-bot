@@ -3,6 +3,7 @@ const { claudeChat } = require('./services/claudeApi');
 const { getUser } = require('./users');
 const { tryAcquire, release, REJECT_MESSAGE } = require('./ratelimit');
 const { isTimedOut, timeout } = require('./moderation');
+const { friendlyError } = require('./errors');
 
 // Control token the LLM appends when it decides to time out an abusive user.
 // Stripped from the visible reply; the ban is enforced deterministically here.
@@ -170,8 +171,11 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
     if (out) await sock.sendMessage(replyJid, { text: out });
     await sendPosters(sock, replyJid, withPosters);
   } catch (err) {
-    console.error('[NL] Error en run de Claude:', err.message);
-    await sock.sendMessage(replyJid, { text: `❌ Algo falló procesando tu mensaje: ${err.message}` });
+    console.error(
+      '[NL] Error en run de Claude: code=%s message=%s stderr=%s',
+      err.code, err.message, (err.stderr || '').slice(0, 500)
+    );
+    await sock.sendMessage(replyJid, { text: friendlyError(err) });
   } finally {
     await sock.sendPresenceUpdate('paused', replyJid).catch(() => {});
   }
