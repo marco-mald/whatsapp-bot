@@ -37,6 +37,21 @@ const RESTRICTED_TOOLS = [
   'subtitles_search', // convenience: users can add subs to their own content
 ].map((t) => `mcp__mediaops__${t}`).join(',');
 
+async function runOnce(args) {
+  const { stdout } = await execFileAsync('claude', args, {
+    timeout: 300000,
+    maxBuffer: 10 * 1024 * 1024,
+    cwd: process.env.HOME,
+    // Explicit closed stdin: without this the CLI waits ~3s checking for
+    // piped input on every single call, adding latency for no reason here.
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+
+  const data = JSON.parse(stdout.trim());
+  if (data.is_error) throw new Error(data.result || 'Error desconocido del CLI');
+  return { reply: data.result, sessionId: data.session_id };
+}
+
 // Calls the local `claude` CLI in print mode. Modes:
 //   'full'       — unrestricted (admin surfaces: Marco's DM + Debug group)
 //   'mediaops'   — all mediaops MCP tools, nothing else (internal: auto-diagnosis)
@@ -61,17 +76,26 @@ async function claudeChat(message, sessionId = null, mode = 'mediaops', extraCon
   if (sessionId) args.push('--resume', sessionId);
   args.push(message);
 
-  const { stdout } = await execFileAsync('claude', args, {
-    timeout: 300000,
-    maxBuffer: 10 * 1024 * 1024,
-    cwd: process.env.HOME,
-  });
-
-  const data = JSON.parse(stdout.trim());
-
-  if (data.is_error) throw new Error(data.result || 'Error desconocido del CLI');
-
-  return { reply: data.result, sessionId: data.session_id };
+  try {
+    return await runOnce(args);
+  } catch (err) {
+    // Transient CLI/API hiccups happen occasionally; one silent retry before
+    // surfacing an error to the user. Log full stdout/stderr either way —
+    // err.message alone hides the actual cause.
+    console.error(
+      '[ClaudeApi] Primer intento falló, reintentando. code=%s stdout=%s stderr=%s',
+      err.code, (err.stdout || '').slice(0, 500), (err.stderr || '').slice(0, 500)
+    );
+    try {
+      return await runOnce(args);
+    } catch (err2) {
+      console.error(
+        '[ClaudeApi] Reintento también falló. code=%s stdout=%s stderr=%s',
+        err2.code, (err2.stdout || '').slice(0, 500), (err2.stderr || '').slice(0, 500)
+      );
+      throw err2;
+    }
+  }
 }
 
 module.exports = { claudeChat };
