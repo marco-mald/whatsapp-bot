@@ -73,7 +73,10 @@ instead). The bot only reacts inside groups:
   max 1 per 30 min, 6 h dedupe) that posts probable cause + suggested action.
 - **Quiet hours** (`QUIET_HOURS`, default 22:00–08:00): notifications queue in
   `data/notify-queue.json` and arrive as one morning digest 🌙.
-- **Night optimizer** (`OPTIMIZE_WINDOW`, default 01:00–08:00): normalizes the
+- **Night optimizer** (`OPTIMIZE_WINDOW`, default 01:00–08:00): the ONLY
+  normalization path (decided 2026-07-04 — Media Manager's webhook no longer
+  normalizes inline; it just refreshes Jellyfin immediately so availability
+  notifications aren't delayed by 30-90 min encodes). Normalizes the
   Media Manager backlog one file at a time — only if no job is running AND
   nobody is streaming on Jellyfin. Priority: needs-fix → no-aac → needs-video.
   Failed files are remembered and skipped (`data/optimizer-state.json`).
