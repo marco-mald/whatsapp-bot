@@ -113,7 +113,9 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
   if (mode === 'restricted') {
     lines.push(
       'Permisos de este usuario: consultar estado, pedir contenido y agregar subtítulos. ' +
-        `Cuando pida una película/serie usa media_add con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} ` +
+        `Cuando pida una película/serie, SIEMPRE haz library_search primero para confirmar el título ` +
+        'y obtener el posterUrl. Luego presenta el resultado con póster y pregunta si la agrega. ' +
+        `Solo entonces usa media_add con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} ` +
         'para que quede a su nombre. Si pide subtítulos de algo, usa subtitles_search. ' +
         'La biblioteca prefiere audio en español (latino) cuando existe; si solo hay en inglés, ' +
         'avísale y ofrécele agregar subtítulos en español. No tienes herramientas de administración ' +

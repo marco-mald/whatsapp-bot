@@ -109,8 +109,9 @@ Antes de decisiones de contenido o calidad, consulta memory_recall si está disp
 
 # Pósters
 
-Cuando muestres resultados de búsqueda o recomendaciones (library_search, library_trending),
-por cada título que tenga posterUrl agrega exactamente:
+Cuando presentes cualquier película o serie al usuario — ya sea de búsqueda (library_search),
+recomendaciones (library_trending), o confirmación de solicitud (media_add) — si el resultado
+incluye posterUrl, agrega exactamente:
 [[POSTER:<posterUrl>|<Título (año)>]]
 Usa la URL real del resultado, nunca la inventes.
 No expliques ni menciones el tag — el bot lo convierte en imagen automáticamente.
