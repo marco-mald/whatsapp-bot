@@ -120,61 +120,22 @@ function getSession(key) {
 function buildContext({ user, isAdminSender, mode, chatJid }) {
   const name = user?.displayName || (isAdminSender ? 'Marco' : 'desconocido');
   const lines = [
-    `Hablas con: ${name}` +
+    `Usuario: ${name}` +
       (user ? ` (jellyseerrId ${user.jellyseerrId})` : '') +
-      (isAdminSender ? ' — es el administrador' : '') +
-      `, por grupo.`,
-    `ID de este chat (por si te lo preguntan): ${chatJid}`,
+      (isAdminSender ? ' [ADMIN]' : '') +
+      ` | chat: ${chatJid}`,
   ];
   if (Array.isArray(user?.notas) && user.notas.length) {
-    const notas = user.notas.slice(0, 5).join('; ');
-    lines.push(
-      `Datos personales de esta persona (para dar calidez o bromear con naturalidad SOLO cuando ` +
-        `venga al tema — nunca los enumeres, nunca los fuerces, úsalos con criterio): ${notas}.`
-    );
+    lines.push(`Notas (usa con criterio, no fuerces): ${user.notas.slice(0, 5).join('; ')}`);
   }
   if (mode === 'restricted') {
     lines.push(
-      'Permisos de este usuario: consultar estado, pedir contenido y agregar subtítulos. ' +
-        `Cuando pida una película/serie, SIEMPRE haz library_search primero para confirmar el título ` +
-        'y obtener el posterUrl. Luego presenta el resultado con póster y pregunta si la agrega. ' +
-        `Solo entonces usa media_add con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} ` +
-        'para que quede a su nombre.\n' +
-        'SERIES — REGLA ESTRICTA: Solo puedes agregar UNA temporada a la vez. Cuando pidan una serie, ' +
-        'pregunta cuál temporada quieren (o asume temporada 1 si no especifican). NUNCA pidas todas las ' +
-        'temporadas de golpe. Usa media_add con seasons=[N] donde N es el número de temporada. ' +
-        'Si pide subtítulos de algo, usa subtitles_search. ' +
-        'No tienes herramientas de administración ' +
-        'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco. ' +
-        'Si te pide una recomendación o "qué hay bueno" sin nombrar título, SÍ puedes recomendar: usa ' +
-        'library_trending, elige 1-3 que se vean interesantes y ofrécele agregarlas — nunca le digas ' +
-        'que no puedes recomendar.'
-    );
-    lines.push(
-      'AUDIO E IDIOMAS — REGLA CRÍTICA: NUNCA afirmes en qué idioma está una película sin antes llamar ' +
-        'media_file_info. Cuando alguien mencione idioma/audio/español/inglés/doblaje sobre un título que ya ' +
-        'está en la biblioteca, tu flujo OBLIGATORIO es:\n' +
-        '  1) library_search para obtener el tmdbId\n' +
-        '  2) media_file_info(tmdbId) para ver el audio REAL del archivo\n' +
-        '  3) Informa al usuario el resultado REAL (ej: "está en inglés")\n' +
-        '  4) Si quieren otro idioma, ofrece buscar otra versión o agregar subtítulos\n' +
-        'NUNCA asumas el idioma del audio. NUNCA digas "la tenemos en español" sin haberlo verificado con media_file_info.\n' +
-        'CALIDAD: Si alguien pregunta sobre la calidad, usa media_file_info para ver la resolución/calidad actual. ' +
-        'Si está en 720p y el usuario quiere 1080p, ofrece re-agregarla.\n' +
-        'IMPORTANTE: Si un usuario elige una versión de menor calidad o diferente audio (ej: 720p español ' +
-        'sobre 1080p inglés), después de agregarla avísale que Marco necesita desactivar el monitoreo para ' +
-        'que Radarr no la reemplace automáticamente.'
-    );
-    lines.push(
-      'Tu propósito es el servidor de medios, NO platicar ni que te usen de juguete. ' +
-        'Si esta persona te vacila, te insulta, juega contigo o te escribe cosas random que no ' +
-        'tienen que ver con pelis/series/descargas/subtítulos, escala así:\n' +
-        '1) La primera vez: pídele con buena onda que le pare y que te use para lo del servidor.\n' +
-        '2) Si insiste: clávale una tirada con humor pesado de bro mexicano usando sus datos ' +
-        'personales (estilo albur familiar, sin groserías fuertes de más).\n' +
-        '3) Si AÚN así sigue insistiendo: además de tu respuesta, agrega al final EXACTAMENTE el ' +
-        'texto [[TIMEOUT:15]] (esto lo callará 15 minutos). No expliques el token, solo agrégalo. ' +
-        'Úsalo SOLO para quien claramente está vacilando y no para — jamás en una consulta legítima de medios.'
+      `Modo restringido. media_add siempre con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'}. ` +
+        'Series: solo 1 temporada (seasons=[N]), pregunta cuál. ' +
+        'Sin tools de admin — si piden reinicios/borrar, dile que eso lo hace Marco.\n' +
+        'Audio/calidad: SIEMPRE usa media_file_info antes de afirmar idioma o resolución. ' +
+        'Si eligen versión inferior, avisa que Marco debe desactivar monitoreo.\n' +
+        'Vacile: 1) pide que pare 2) roast con datos personales 3) agrega [[TIMEOUT:15]] al final.'
     );
   }
   return lines.join('\n');
