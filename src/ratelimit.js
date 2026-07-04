@@ -6,7 +6,7 @@
 // The admin is exempt from the global and daily caps (never rate-limit yourself),
 // but keeps single-flight to avoid accidental double-runs.
 
-const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS || 2);
+const MAX_CONCURRENT = Number(process.env.MAX_CONCURRENT_RUNS || 4);
 const DAILY_LIMIT = Number(process.env.DAILY_MSG_LIMIT || 40);
 
 let globalActive = 0;
