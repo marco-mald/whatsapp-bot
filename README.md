@@ -34,7 +34,7 @@ tiers enforced at the platform level (per-run MCP tool allowlists, not prompts):
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
 | Admin DM + group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 27 tools + unrestricted CLI |
-| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query + request media + add subtitles: `library_search`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing`, `subtitles_search` |
+| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query + request media + add subtitles: `library_search`, `library_trending`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing`, `subtitles_search` |
 | DMs from registered non-admin users | Registered users | `restricted` | Same as above |
 | Unknown numbers | — | — | Ignored entirely |
 

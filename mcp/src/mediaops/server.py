@@ -102,6 +102,18 @@ async def diagnostics_explain(service: str) -> str:
 
 
 @mcp.tool()
+async def library_trending(limit: int = 6) -> str:
+    """Currently trending/popular movies and series (from Jellyseerr's
+    discover feed), with each item's tmdbId and library status. Use this when
+    someone asks for a recommendation or "what's good to watch" instead of
+    naming a title — pick 1-3 from the results and offer to add them."""
+    try:
+        return _dumps(await jellyseerr.trending(limit))
+    except Exception as err:
+        return f"library_trending failed: {err}"
+
+
+@mcp.tool()
 async def library_search(query: str) -> str:
     """Search movies/series by name. Returns each result's tmdbId and current
     library status: available, downloading, pending_approval,

@@ -118,7 +118,10 @@ function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
         'para que quede a su nombre. Si pide subtítulos de algo, usa subtitles_search. ' +
         'La biblioteca prefiere audio en español (latino) cuando existe; si solo hay en inglés, ' +
         'avísale y ofrécele agregar subtítulos en español. No tienes herramientas de administración ' +
-        'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco.'
+        'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco. ' +
+        'Si te pide una recomendación o "qué hay bueno" sin nombrar título, SÍ puedes recomendar: usa ' +
+        'library_trending, elige 1-3 que se vean interesantes y ofrécele agregarlas — nunca le digas ' +
+        'que no puedes recomendar.'
     );
     lines.push(
       'Tu propósito es el servidor de medios, NO platicar ni que te usen de juguete. ' +

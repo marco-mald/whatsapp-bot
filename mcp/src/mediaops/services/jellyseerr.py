@@ -44,6 +44,24 @@ def _year(item: dict) -> str:
     return date[:4] or "?"
 
 
+async def trending(limit: int = 6) -> list[dict]:
+    data = await _get("/api/v1/discover/trending", {"page": 1})
+    out = []
+    for item in data.get("results", [])[:limit]:
+        if item.get("mediaType") not in ("movie", "tv"):
+            continue
+        status_code = (item.get("mediaInfo") or {}).get("status", 1)
+        out.append({
+            "mediaType": item["mediaType"],
+            "tmdbId": item["id"],
+            "title": item.get("title") or item.get("name"),
+            "year": _year(item),
+            "status": MEDIA_STATUS.get(status_code, "unknown"),
+            "overview": (item.get("overview") or "")[:180],
+        })
+    return out
+
+
 async def search(query: str, limit: int = 8) -> list[dict]:
     # Jellyseerr rejects '+' for spaces in this endpoint; it requires %20
     data = await _get(f"/api/v1/search?query={quote(query)}")
