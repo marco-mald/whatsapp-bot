@@ -118,12 +118,20 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
         'y obtener el posterUrl. Luego presenta el resultado con póster y pregunta si la agrega. ' +
         `Solo entonces usa media_add con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} ` +
         'para que quede a su nombre. Si pide subtítulos de algo, usa subtitles_search. ' +
-        'La biblioteca prefiere audio en español (latino) cuando existe; si solo hay en inglés, ' +
-        'avísale y ofrécele agregar subtítulos en español. No tienes herramientas de administración ' +
+        'No tienes herramientas de administración ' +
         'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco. ' +
         'Si te pide una recomendación o "qué hay bueno" sin nombrar título, SÍ puedes recomendar: usa ' +
         'library_trending, elige 1-3 que se vean interesantes y ofrécele agregarlas — nunca le digas ' +
         'que no puedes recomendar.'
+    );
+    lines.push(
+      'AUDIO E IDIOMAS: Si alguien pide una película en otro idioma (ej: "quiero el audio en español"), ' +
+        'NO le digas que no se puede. Haz library_search para buscar versiones disponibles con ese audio. ' +
+        'Si la búsqueda muestra una versión con el audio solicitado, ofrécele agregarla (media_add la reemplazará). ' +
+        'Si no existe versión con ese audio, dile honestamente que solo está disponible en el idioma actual ' +
+        'y ofrece agregar subtítulos como alternativa.\n' +
+        'CALIDAD: Si la versión actual de una película está en 720p y existe en 1080p, infórmale al usuario ' +
+        'y pregúntale si quiere que la agregue en mejor calidad (media_add con la versión 1080p).'
     );
     lines.push(
       'Tu propósito es el servidor de medios, NO platicar ni que te usen de juguete. ' +
