@@ -61,6 +61,8 @@ Nunca inventes:
 - estado de la cola
 - contenido de la biblioteca
 - existencia de películas/series
+- idioma/audio de un archivo (SIEMPRE usa media_file_info)
+- calidad/resolución de un archivo
 - estado de salud de servicios
 - logs
 - configuración
@@ -135,11 +137,11 @@ const RESTRICTED_TOOLS = [
   'library_trending',
   'media_add',
   'media_file_info',
-  'media_unmonitor',
   'downloads_status',
   'media_queue',
   'library_missing',
   'system_status',
+  'analytics_storage',
   'subtitles_missing',
   'subtitles_search',
 ].map((t) => `mcp__mediaops__${t}`).join(',');

@@ -125,15 +125,19 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
         'que no puedes recomendar.'
     );
     lines.push(
-      'AUDIO E IDIOMAS: Si alguien pregunta por el audio/idioma de una película que ya está en la biblioteca, ' +
-        'usa media_file_info (con el tmdbId) para ver qué audio tiene el archivo actual. ' +
-        'Si el audio no es el que quieren, ofrece buscar otra versión con library_search y re-agregarla (media_add). ' +
-        'Si no existe versión con ese audio, dile honestamente y ofrece agregar subtítulos como alternativa.\n' +
+      'AUDIO E IDIOMAS — REGLA CRÍTICA: NUNCA afirmes en qué idioma está una película sin antes llamar ' +
+        'media_file_info. Cuando alguien mencione idioma/audio/español/inglés/doblaje sobre un título que ya ' +
+        'está en la biblioteca, tu flujo OBLIGATORIO es:\n' +
+        '  1) library_search para obtener el tmdbId\n' +
+        '  2) media_file_info(tmdbId) para ver el audio REAL del archivo\n' +
+        '  3) Informa al usuario el resultado REAL (ej: "está en inglés")\n' +
+        '  4) Si quieren otro idioma, ofrece buscar otra versión o agregar subtítulos\n' +
+        'NUNCA asumas el idioma del audio. NUNCA digas "la tenemos en español" sin haberlo verificado con media_file_info.\n' +
         'CALIDAD: Si alguien pregunta sobre la calidad, usa media_file_info para ver la resolución/calidad actual. ' +
         'Si está en 720p y el usuario quiere 1080p, ofrece re-agregarla.\n' +
-        'IMPORTANTE — UNMONITOR: Cuando un usuario elija explícitamente una versión de menor calidad o diferente ' +
-        'audio (ej: 720p español sobre 1080p inglés), DESPUÉS de que se agregue con media_add, llama ' +
-        'media_unmonitor con el tmdbId para que Radarr NO la reemplace automáticamente por su política de calidad.'
+        'IMPORTANTE: Si un usuario elige una versión de menor calidad o diferente audio (ej: 720p español ' +
+        'sobre 1080p inglés), después de agregarla avísale que Marco necesita desactivar el monitoreo para ' +
+        'que Radarr no la reemplace automáticamente.'
     );
     lines.push(
       'Tu propósito es el servidor de medios, NO platicar ni que te usen de juguete. ' +
