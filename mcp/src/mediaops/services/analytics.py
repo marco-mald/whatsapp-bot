@@ -67,6 +67,15 @@ async def library_summary() -> dict:
     }
 
 
+def _poster_from_images(images: list) -> str | None:
+    for img in (images or []):
+        if img.get("coverType") == "poster":
+            url = img.get("remoteUrl") or img.get("url", "")
+            if url.startswith("http"):
+                return url
+    return None
+
+
 async def library_catalog() -> dict:
     """List all movies and series currently available in the library."""
     from .arr_media import _get
@@ -76,14 +85,24 @@ async def library_catalog() -> dict:
         _get("sonarr", "/series"),
     )
     movies = [
-        {"title": m.get("title"), "year": m.get("year"), "tmdbId": m.get("tmdbId")}
+        {
+            "title": m.get("title"),
+            "year": m.get("year"),
+            "tmdbId": m.get("tmdbId"),
+            "posterUrl": _poster_from_images(m.get("images")),
+        }
         for m in radarr_movies
         if m.get("hasFile")
     ]
     movies.sort(key=lambda m: m.get("title", "").lower())
 
     series = [
-        {"title": s.get("title"), "year": s.get("year"), "tmdbId": s.get("tvdbId")}
+        {
+            "title": s.get("title"),
+            "year": s.get("year"),
+            "tvdbId": s.get("tvdbId"),
+            "posterUrl": _poster_from_images(s.get("images")),
+        }
         for s in sonarr_series
         if (s.get("statistics") or {}).get("episodeFileCount", 0) > 0
     ]

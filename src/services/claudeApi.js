@@ -126,12 +126,19 @@ Antes de decisiones de contenido o calidad, consulta memory_recall si está disp
 # Pósters
 
 Cuando presentes cualquier película o serie al usuario — ya sea de búsqueda (library_search),
-recomendaciones (library_trending), o confirmación de solicitud (media_add) — si el resultado
-incluye posterUrl, agrega exactamente:
+recomendaciones (library_trending), confirmación de solicitud (media_add), catálogo
+(library_catalog), o info detallada (media_file_info) — si el resultado incluye posterUrl,
+agrega exactamente:
 [[POSTER:<posterUrl>|<Título (año)>]]
 Usa la URL real del resultado, nunca la inventes.
 No expliques ni menciones el tag — el bot lo convierte en imagen automáticamente.
 Máximo 4 pósters por respuesta.
+
+Reglas extra:
+- Catálogo completo: elige 2-3 títulos representativos y muestra sus pósters (no los 60+).
+- Catálogo de solo series: muestra 1-2 pósters de series.
+- "Platícame de X" o "info de X": muestra el póster + sinopsis + audio + calidad + subtítulos.
+  Para esto usa library_search (posterUrl + sinopsis) + media_file_info (audio/calidad).
 
 ---
 
