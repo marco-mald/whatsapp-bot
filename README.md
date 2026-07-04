@@ -31,12 +31,17 @@ The AI never talks to services directly: agent runs are locked to the MCP tools
 There are no `!` commands. Everything is conversational, with zero-trust access
 tiers enforced at the platform level (per-run MCP tool allowlists, not prompts):
 
+**DMs are disabled entirely** — delivery to direct messages proved unreliable
+(replies get silently stuck as PENDING), and it was a recurring source of
+confusion (someone taps the bot's contact meaning to address the group
+instead). The bot only reacts inside groups:
+
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
-| Admin DM + group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 27 tools + unrestricted CLI |
+| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 28 tools + unrestricted CLI |
 | Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query + request media + add subtitles: `library_search`, `library_trending`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing`, `subtitles_search` |
-| DMs from registered non-admin users | Registered users | `restricted` | Same as above |
 | Unknown numbers | — | — | Ignored entirely |
+| Any DM (including the admin's own) | — | — | Ignored entirely |
 
 - Requests are attributed: each run carries the speaker's identity, and
   `media_add` is called with their `jellyseerr_user_id`.

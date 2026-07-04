@@ -13,12 +13,14 @@ const TIMEOUT_TOKEN = /\[\[TIMEOUT:(\d{1,3})\]\]/;
 const POSTER_TOKEN = /\[\[POSTER:([^|\]]+)\|([^\]]+)\]\]/g;
 const MAX_POSTERS = 4;
 
-// Natural-language-only router with least-privilege access:
-//   - Admin surfaces (Marco's DM + the "Debug" group): every message → Claude
-//     in 'full' mode.
+// Natural-language-only router with least-privilege access. Groups only —
+// DMs are ignored entirely (unreliable delivery, and a common source of
+// confusion when someone means to address the group but taps the bot's
+// contact instead):
+//   - Admin surface (the "Debug" group): every message from the admin number
+//     → Claude in 'full' mode.
 //   - Other groups: only when the bot is @mentioned or quoted, and only from
 //     registered users → Claude in 'restricted' mode (query + request media).
-//   - DMs from registered non-admin users → 'restricted'.
 //   - Unknown numbers: ignored entirely (zero trust).
 
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER || '';
@@ -85,29 +87,19 @@ function stripBotMention(text) {
   return out.replace(/\s+/g, ' ').trim();
 }
 
-// In DMs, look up the canonical JID via onWhatsApp so we send to the right address
-async function resolveReplyJid(sock, remoteJid) {
-  if (remoteJid.endsWith('@g.us') || remoteJid.endsWith('@lid')) return remoteJid;
-  try {
-    const [result] = await sock.onWhatsApp(remoteJid.split('@')[0]);
-    if (result?.jid) return result.jid;
-  } catch {}
-  return remoteJid;
-}
-
 function getSession(key) {
   const s = sessions.get(key);
   if (!s || Date.now() - s.lastUsed > SESSION_TTL_MS) return null;
   return s;
 }
 
-function buildContext({ user, isAdminSender, isGroup, mode, chatJid }) {
+function buildContext({ user, isAdminSender, mode, chatJid }) {
   const name = user?.displayName || (isAdminSender ? 'Marco' : 'desconocido');
   const lines = [
     `Hablas con: ${name}` +
       (user ? ` (jellyseerrId ${user.jellyseerrId})` : '') +
       (isAdminSender ? ' — es el administrador' : '') +
-      `, por ${isGroup ? 'grupo' : 'mensaje directo'}.`,
+      `, por grupo.`,
     `ID de este chat (por si te lo preguntan): ${chatJid}`,
   ];
   if (Array.isArray(user?.notas) && user.notas.length) {
@@ -198,10 +190,15 @@ async function messageHandler(sock, msg) {
 
   if (!msg.message) return;
 
+  // DMs are disabled entirely: unreliable delivery, and a common source of
+  // confusion (someone taps the bot's contact meaning to address the group).
+  // The admin's reliable channel is the Debug group.
+  const isGroup = msg.key.remoteJid?.endsWith('@g.us');
+  if (!isGroup) return;
+
   const text = extractText(msg).trim();
   if (!text) return;
 
-  const isGroup = msg.key.remoteJid?.endsWith('@g.us');
   const senderJid = msg.key.participant || msg.key.remoteJid;
   const senderPhone = bare(senderJid);
 
@@ -211,20 +208,19 @@ async function messageHandler(sock, msg) {
   // Zero trust: unknown numbers are ignored entirely
   if (!user && !isAdminSender) return;
 
-  const isAdminSurface = adminChatIds.has(msg.key.remoteJid) || (!isGroup && isAdminSender);
+  const isAdminSurface = adminChatIds.has(msg.key.remoteJid);
 
-  // In normal groups the bot only reacts when addressed
-  if (isGroup && !isAdminSurface && !isBotMentioned(msg)) {
+  // The bot only reacts when addressed
+  if (!isAdminSurface && !isBotMentioned(msg)) {
     if (text.startsWith('!')) {
-      const replyJid = msg.key.remoteJid;
-      await sock.sendMessage(replyJid, {
+      await sock.sendMessage(msg.key.remoteJid, {
         text: 'ℹ️ Los comandos con *!* ya no existen — ahora háblame normal mencionándome (@) y dime qué necesitas. 🤖',
       });
     }
     return;
   }
 
-  const replyJid = isGroup ? msg.key.remoteJid : await resolveReplyJid(sock, msg.key.remoteJid);
+  const replyJid = msg.key.remoteJid;
   const mode = isAdminSurface && isAdminSender ? 'full' : 'restricted';
   const sessionKey = `${msg.key.remoteJid}:${senderPhone}`;
 
@@ -241,7 +237,7 @@ async function messageHandler(sock, msg) {
     return;
   }
 
-  const cleanText = isGroup ? stripBotMention(text) : text;
+  const cleanText = stripBotMention(text);
   if (!cleanText) return;
 
   const gate = tryAcquire(senderPhone, { admin: mode === 'full' });
@@ -253,7 +249,7 @@ async function messageHandler(sock, msg) {
 
   console.log(`[NL] ${user?.displayName || senderPhone} (${mode}) @ ${msg.key.remoteJid}: ${cleanText.slice(0, 80)}`);
 
-  const context = buildContext({ user, isAdminSender, isGroup, mode, chatJid: msg.key.remoteJid });
+  const context = buildContext({ user, isAdminSender, mode, chatJid: msg.key.remoteJid });
   try {
     await runClaude(sock, msg, {
       text: cleanText, replyJid, sessionKey, mode, context,
