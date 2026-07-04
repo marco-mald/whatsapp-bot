@@ -82,6 +82,47 @@ async def _put(app: str, path: str, body: dict):
         return res.json()
 
 
+async def movie_file_info(tmdb_id: int) -> dict:
+    """Get details about the downloaded file for a movie: quality, languages,
+    audio tracks, size, etc. from Radarr."""
+    movies = await _get("radarr", "/movie")
+    match = next((m for m in movies if m.get("tmdbId") == tmdb_id), None)
+    if not match:
+        return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
+
+    movie_file = match.get("movieFile")
+    if not movie_file:
+        return {
+            "title": match.get("title"),
+            "tmdbId": tmdb_id,
+            "hasFile": False,
+        }
+
+    languages = [lang.get("name", "?") for lang in movie_file.get("languages", [])]
+    media_info = movie_file.get("mediaInfo") or {}
+    audio_languages = media_info.get("audioLanguages", "")
+    audio_codec = media_info.get("audioCodec", "")
+    video_codec = media_info.get("videoCodec", "")
+    resolution = media_info.get("resolution", "")
+
+    quality = (movie_file.get("quality") or {}).get("quality", {})
+
+    return {
+        "title": match.get("title"),
+        "tmdbId": tmdb_id,
+        "hasFile": True,
+        "quality": quality.get("name", "?"),
+        "resolution": resolution,
+        "videoCodec": video_codec,
+        "audioCodec": audio_codec,
+        "audioLanguages": audio_languages,
+        "fileLanguages": languages,
+        "size_gb": round(movie_file.get("size", 0) / 1073741824, 2),
+        "path": movie_file.get("relativePath", ""),
+        "monitored": match.get("monitored", True),
+    }
+
+
 async def unmonitor_movie(tmdb_id: int) -> dict:
     """Find a movie by tmdbId in Radarr and set monitored=false so Radarr
     stops upgrading it (e.g. when user chose a specific quality/audio)."""

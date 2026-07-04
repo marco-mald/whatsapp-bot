@@ -134,6 +134,7 @@ const RESTRICTED_TOOLS = [
   'library_search',
   'library_trending',
   'media_add',
+  'media_file_info',
   'media_unmonitor',
   'downloads_status',
   'media_queue',

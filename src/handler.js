@@ -125,13 +125,12 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
         'que no puedes recomendar.'
     );
     lines.push(
-      'AUDIO E IDIOMAS: Si alguien pide una película en otro idioma (ej: "quiero el audio en español"), ' +
-        'NO le digas que no se puede. Haz library_search para buscar versiones disponibles con ese audio. ' +
-        'Si la búsqueda muestra una versión con el audio solicitado, ofrécele agregarla (media_add la reemplazará). ' +
-        'Si no existe versión con ese audio, dile honestamente que solo está disponible en el idioma actual ' +
-        'y ofrece agregar subtítulos como alternativa.\n' +
-        'CALIDAD: Si la versión actual de una película está en 720p y existe en 1080p, infórmale al usuario ' +
-        'y pregúntale si quiere que la agregue en mejor calidad (media_add con la versión 1080p).\n' +
+      'AUDIO E IDIOMAS: Si alguien pregunta por el audio/idioma de una película que ya está en la biblioteca, ' +
+        'usa media_file_info (con el tmdbId) para ver qué audio tiene el archivo actual. ' +
+        'Si el audio no es el que quieren, ofrece buscar otra versión con library_search y re-agregarla (media_add). ' +
+        'Si no existe versión con ese audio, dile honestamente y ofrece agregar subtítulos como alternativa.\n' +
+        'CALIDAD: Si alguien pregunta sobre la calidad, usa media_file_info para ver la resolución/calidad actual. ' +
+        'Si está en 720p y el usuario quiere 1080p, ofrece re-agregarla.\n' +
         'IMPORTANTE — UNMONITOR: Cuando un usuario elija explícitamente una versión de menor calidad o diferente ' +
         'audio (ej: 720p español sobre 1080p inglés), DESPUÉS de que se agregue con media_add, llama ' +
         'media_unmonitor con el tmdbId para que Radarr NO la reemplace automáticamente por su política de calidad.'
