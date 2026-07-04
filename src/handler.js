@@ -300,6 +300,19 @@ async function messageHandler(sock, msg) {
   const cleanText = stripBotMention(text);
   if (!cleanText) return;
 
+  // Intercept "no" responses before calling Claude — react with 👍 and save the API call.
+  const NO_PATTERNS = /^(no|NO|nel|nah|nop|nope|mejor no|después|despues|déjalo|dejalo|ya no|naa|simon que no|nel pastel|va que no)\.?$/i;
+  if (NO_PATTERNS.test(cleanText.trim())) {
+    try {
+      await sock.sendMessage(replyJid, {
+        react: { text: '👍', key: msg.key },
+      });
+    } catch (err) {
+      console.error('[Handler] Error reaccionando:', err.message);
+    }
+    return;
+  }
+
   const gate = tryAcquire(senderPhone, { admin: mode === 'full', chatJid: replyJid });
   if (!gate.ok) {
     console.log(`[NL] Rechazado (${gate.reason}): ${user?.displayName || senderPhone}`);
