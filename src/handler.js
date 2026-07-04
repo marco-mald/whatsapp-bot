@@ -192,11 +192,15 @@ async function sendPosters(sock, replyJid, text) {
   }
 }
 
+const THINKING_REPLIES = ['🔍 Déjame checar...', '⏳ Un momento...', '🎬 Buscando...', '👀 Revisando...'];
+
 async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context, senderPhone, isAdmin }) {
   const session = getSession(sessionKey);
   track(msg, text, mode, senderPhone);
   try {
     await sock.sendPresenceUpdate('composing', replyJid);
+    const thinking = THINKING_REPLIES[Math.floor(Math.random() * THINKING_REPLIES.length)];
+    await sock.sendMessage(replyJid, { text: thinking });
     const { reply, sessionId } = await claudeChat(text, session?.sessionId, mode, context);
     sessions.set(sessionKey, { sessionId, lastUsed: Date.now() });
     saveSessions();
@@ -296,7 +300,7 @@ async function messageHandler(sock, msg) {
   const cleanText = stripBotMention(text);
   if (!cleanText) return;
 
-  const gate = tryAcquire(senderPhone, { admin: mode === 'full' });
+  const gate = tryAcquire(senderPhone, { admin: mode === 'full', chatJid: replyJid });
   if (!gate.ok) {
     console.log(`[NL] Rechazado (${gate.reason}): ${user?.displayName || senderPhone}`);
     await sock.sendMessage(replyJid, { text: REJECT_MESSAGE[gate.reason] });

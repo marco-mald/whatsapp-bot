@@ -9,8 +9,31 @@ from __future__ import annotations
 
 import asyncio
 import json
+import time
+from functools import wraps
 
 from mcp.server.fastmcp import FastMCP
+
+
+# Simple TTL cache for read-only tool results
+_cache: dict[str, tuple[float, str]] = {}
+CACHE_TTL = 30  # seconds
+
+
+def cached(ttl: int = CACHE_TTL):
+    """Cache async function results by args for `ttl` seconds."""
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapper(*args, **kwargs):
+            key = f"{fn.__name__}:{args}:{kwargs}"
+            now = time.time()
+            if key in _cache and now - _cache[key][0] < ttl:
+                return _cache[key][1]
+            result = await fn(*args, **kwargs)
+            _cache[key] = (now, result)
+            return result
+        return wrapper
+    return decorator
 
 from .inventory import SERVICE_IDS, find_service
 from .services import (
@@ -36,6 +59,7 @@ def _dumps(data) -> str:
 
 
 @mcp.tool()
+@cached(30)
 async def system_status() -> str:
     """Quick status of every service in the media stack: process state
     (docker/systemd/pm2) plus HTTP health endpoint. Use this first for any
@@ -154,6 +178,17 @@ async def media_file_info(tmdb_id: int) -> str:
 
 
 @mcp.tool()
+async def my_requests(jellyseerr_user_id: int) -> str:
+    """List all media requests made by a specific user (by their Jellyseerr ID).
+    Shows title, type, status (available/downloading/pending), and date.
+    Use when someone asks 'what did I request', 'my downloads', 'mis pedidos'."""
+    try:
+        return _dumps(await jellyseerr.user_requests(jellyseerr_user_id))
+    except Exception as err:
+        return f"my_requests failed: {err}"
+
+
+@mcp.tool()
 async def media_unmonitor(tmdb_id: int) -> str:
     """Stop Radarr from upgrading a movie (set monitored=false). Use this after
     a user explicitly chooses a lower-quality or alternate-audio version so
@@ -185,6 +220,7 @@ async def requests_manage(request_id: int, action: str) -> str:
 
 
 @mcp.tool()
+@cached(30)
 async def downloads_status() -> str:
     """Current qBittorrent torrents: state, progress %, speed, ETA, size.
     Use for 'how are the downloads going'."""
@@ -379,6 +415,7 @@ async def analytics_library() -> str:
 
 
 @mcp.tool()
+@cached(60)
 async def library_catalog() -> str:
     """Full list of all movies and series currently available in the library
     (only titles that have files downloaded). Use when someone asks 'what do

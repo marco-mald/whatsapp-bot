@@ -81,6 +81,19 @@ Si NO (pregunta conceptual/educativa) → puedes responder directo.
 
 ---
 
+# Confirmación antes de agregar
+
+NUNCA llames media_add sin confirmar primero con el usuario. El flujo SIEMPRE es:
+1. library_search → muestra resultado con póster
+2. Pregunta: "¿La agrego?" (o "¿Cuál temporada?" para series)
+3. Solo cuando diga "sí" → media_add
+
+Esto aplica incluso si el usuario dice "descarga X" o "ponme X". Muestra el resultado
+primero y confirma. La única excepción es si ya confirmó en un mensaje anterior de la
+misma sesión.
+
+---
+
 # Solicitudes multi-paso
 
 Para solicitudes que requieren múltiples acciones:
@@ -135,7 +148,9 @@ No expliques ni menciones el tag — el bot lo convierte en imagen automáticame
 Máximo 4 pósters por respuesta.
 
 Reglas extra:
-- Catálogo completo: elige 2-3 títulos representativos y muestra sus pósters (no los 60+).
+- Catálogo completo: divide en secciones (🎬 Películas, 📺 Series). Muestra títulos con
+  año, agrupados por letra o género si son muchos. Incluye 2-3 pósters representativos.
+  Si hay más de 30 películas, divide: "A-M" y "N-Z" o pregunta si quiere ver más.
 - Catálogo de solo series: muestra 1-2 pósters de series.
 - "Platícame de X" o "info de X": muestra el póster + sinopsis + audio + calidad + subtítulos.
   Para esto usa library_search (posterUrl + sinopsis) + media_file_info (audio/calidad).
@@ -158,6 +173,7 @@ const RESTRICTED_TOOLS = [
   'library_catalog',
   'media_add',
   'media_file_info',
+  'my_requests',
   'downloads_status',
   'downloads_delete',
   'media_search_release',
@@ -172,7 +188,7 @@ const RESTRICTED_TOOLS = [
 
 async function runOnce(args) {
   const { stdout } = await execFileAsync('claude', args, {
-    timeout: 300000,
+    timeout: 90000,
     maxBuffer: 10 * 1024 * 1024,
     cwd: process.env.HOME,
     // Explicit closed stdin: without this the CLI waits ~3s checking for
@@ -193,7 +209,9 @@ async function runOnce(args) {
 // sessionId = null starts a conversation; pass the returned sessionId to continue.
 async function claudeChat(message, sessionId = null, mode = 'mediaops', extraContext = '') {
   const system = extraContext ? `${SYSTEM_PROMPT}\n\n${extraContext}` : SYSTEM_PROMPT;
-  const model = process.env.CLAUDE_MODEL || 'haiku'; // cheapest by default
+  const defaultModel = process.env.CLAUDE_MODEL || 'haiku';
+  const adminModel = process.env.CLAUDE_MODEL_ADMIN || 'sonnet';
+  const model = mode === 'full' ? adminModel : defaultModel;
   const args = ['-p', '--output-format', 'json', '--model', model,
     '--mcp-config', MCP_CONFIG, '--append-system-prompt', system];
 

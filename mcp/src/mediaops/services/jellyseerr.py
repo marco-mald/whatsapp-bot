@@ -124,6 +124,22 @@ async def pending_requests(take: int = 20) -> list[dict]:
     return out
 
 
+async def user_requests(jellyseerr_user_id: int, take: int = 20) -> list[dict]:
+    """Get all requests made by a specific user."""
+    data = await _get("/api/v1/request", {"take": take, "sort": "added", "requestedBy": jellyseerr_user_id})
+    out = []
+    for req in data.get("results", []):
+        media = req.get("media") or {}
+        status = MEDIA_STATUS.get(media.get("status", 1), "unknown")
+        out.append({
+            "title": (req.get("media") or {}).get("title") or req.get("subject") or "?",
+            "mediaType": media.get("mediaType"),
+            "status": status,
+            "createdAt": (req.get("createdAt") or "")[:10],
+        })
+    return out
+
+
 async def manage_request(request_id: int, action: str) -> str:
     if action not in ("approve", "decline"):
         raise ValueError("action must be 'approve' or 'decline'")

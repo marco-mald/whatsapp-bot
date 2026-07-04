@@ -79,6 +79,61 @@ async function sendTrending(sockRef) {
   }
 }
 
+async function sendDailySummary(sockRef) {
+  const chatIds = targetChatIds();
+  if (!chatIds.length || !sockRef.current) return;
+
+  let downloads;
+  try {
+    const { execFileAsync } = require('./services/claudeApi');
+    // Quick query via MCP — just get download status
+    const axios = require('axios');
+    const cfg = { url: process.env.QBIT_URL || 'http://localhost:8080' };
+    const login = await axios.post(`${cfg.url}/api/v2/auth/login`,
+      `username=${process.env.QBIT_USER}&password=${process.env.QBIT_PASS}`,
+      { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
+    const cookie = login.headers['set-cookie']?.[0]?.split(';')[0];
+    const res = await axios.get(`${cfg.url}/api/v2/torrents/info`, {
+      headers: { Cookie: cookie },
+    });
+    downloads = res.data;
+  } catch (err) {
+    console.error('[Scheduler] Error obteniendo resumen diario:', err.message);
+    return;
+  }
+
+  const completed = downloads.filter((t) => t.progress >= 1.0);
+  const active = downloads.filter((t) => t.progress < 1.0 && t.progress > 0);
+  const stalled = downloads.filter((t) => t.progress < 1.0 && t.dlspeed === 0);
+
+  if (!completed.length && !active.length) return;
+
+  const lines = ['📊 *Resumen diario del servidor*\n'];
+  if (completed.length) {
+    lines.push(`✅ *${completed.length} descarga(s) completada(s):*`);
+    completed.slice(0, 10).forEach((t) => lines.push(`  • ${t.name}`));
+  }
+  if (active.length) {
+    lines.push(`\n⬇️ *${active.length} descargando:*`);
+    active.slice(0, 5).forEach((t) =>
+      lines.push(`  • ${t.name} — ${Math.round(t.progress * 100)}%`)
+    );
+  }
+  if (stalled.length) {
+    lines.push(`\n⚠️ *${stalled.length} sin velocidad* (posibles torrents muertos)`);
+  }
+
+  const text = lines.join('\n');
+  for (const chatId of chatIds) {
+    try {
+      await sockRef.current.sendMessage(chatId, { text });
+    } catch (err) {
+      console.error(`[Scheduler] Error enviando resumen a ${chatId}:`, err.message);
+    }
+  }
+}
+
 function setupScheduler(sockRef) {
   const timezone = process.env.TIMEZONE || 'America/Mexico_City';
 
@@ -93,7 +148,18 @@ function setupScheduler(sockRef) {
     { timezone }
   );
 
-  console.log(`[Scheduler] Notificaciones programadas: domingos 11:00am (${timezone})`);
+  cron.schedule(
+    '0 9 * * *',
+    () => {
+      console.log('[Scheduler] Enviando resumen diario...');
+      sendDailySummary(sockRef).catch((err) =>
+        console.error('[Scheduler] Error fatal en sendDailySummary:', err)
+      );
+    },
+    { timezone }
+  );
+
+  console.log(`[Scheduler] Notificaciones programadas: domingos 11:00am, diario 9:00am (${timezone})`);
 }
 
 module.exports = { setupScheduler, sendTrending };
