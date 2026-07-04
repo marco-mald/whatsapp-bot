@@ -126,15 +126,18 @@ async def library_search(query: str) -> str:
 
 
 @mcp.tool()
-async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | None = None) -> str:
+async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | None = None, seasons: list[int] | None = None) -> str:
     """Request a movie or series ('movie' or 'tv', tmdbId from library_search).
     The request is auto-approved and downloading starts immediately, so confirm
-    intent before calling. For tv, all seasons are requested. Optionally
-    attribute the request to a Jellyseerr user id."""
+    intent before calling. For tv: only ONE season at a time (default: season 1).
+    Pass seasons=[N] to request a specific season. NEVER request all seasons at
+    once. Optionally attribute the request to a Jellyseerr user id."""
     if media_type not in ("movie", "tv"):
         return "media_type must be 'movie' or 'tv'"
+    if media_type == "tv" and seasons and len(seasons) > 1:
+        return "Solo puedes pedir 1 temporada a la vez. Elige cuál quieres primero."
     try:
-        return _dumps(await jellyseerr.request_media(media_type, tmdb_id, jellyseerr_user_id))
+        return _dumps(await jellyseerr.request_media(media_type, tmdb_id, jellyseerr_user_id, seasons))
     except Exception as err:
         return f"media_add failed: {err}"
 

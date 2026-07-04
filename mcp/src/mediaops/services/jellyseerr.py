@@ -91,11 +91,13 @@ async def search(query: str, limit: int = 8) -> list[dict]:
     return results
 
 
-async def request_media(media_type: str, tmdb_id: int, jellyseerr_user_id: int | None = None) -> dict:
+async def request_media(media_type: str, tmdb_id: int, jellyseerr_user_id: int | None = None, seasons: list[int] | None = None) -> dict:
     body: dict[str, Any] = {"mediaType": media_type, "mediaId": tmdb_id}
     if media_type == "tv":
-        tv = await _get(f"/api/v1/tv/{tmdb_id}")
-        body["seasons"] = [s["seasonNumber"] for s in tv.get("seasons", []) if s.get("seasonNumber", 0) > 0]
+        if seasons:
+            body["seasons"] = seasons
+        else:
+            body["seasons"] = [1]
     if jellyseerr_user_id:
         body["userId"] = jellyseerr_user_id
 

@@ -139,7 +139,11 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
         `Cuando pida una película/serie, SIEMPRE haz library_search primero para confirmar el título ` +
         'y obtener el posterUrl. Luego presenta el resultado con póster y pregunta si la agrega. ' +
         `Solo entonces usa media_add con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} ` +
-        'para que quede a su nombre. Si pide subtítulos de algo, usa subtitles_search. ' +
+        'para que quede a su nombre.\n' +
+        'SERIES — REGLA ESTRICTA: Solo puedes agregar UNA temporada a la vez. Cuando pidan una serie, ' +
+        'pregunta cuál temporada quieren (o asume temporada 1 si no especifican). NUNCA pidas todas las ' +
+        'temporadas de golpe. Usa media_add con seasons=[N] donde N es el número de temporada. ' +
+        'Si pide subtítulos de algo, usa subtitles_search. ' +
         'No tienes herramientas de administración ' +
         'aquí; si pide cambios al servidor, reinicios o borrar algo, dile amablemente que eso solo lo hace Marco. ' +
         'Si te pide una recomendación o "qué hay bueno" sin nombrar título, SÍ puedes recomendar: usa ' +
