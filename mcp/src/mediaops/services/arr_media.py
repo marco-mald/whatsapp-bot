@@ -70,6 +70,30 @@ async def import_queues() -> list[dict]:
     return radarr + sonarr
 
 
+async def _put(app: str, path: str, body: dict):
+    async with httpx.AsyncClient() as client:
+        res = await client.put(
+            f"{APPS[app]}{path}",
+            headers={"X-Api-Key": _key(app)},
+            json=body,
+            timeout=15.0,
+        )
+        res.raise_for_status()
+        return res.json()
+
+
+async def unmonitor_movie(tmdb_id: int) -> dict:
+    """Find a movie by tmdbId in Radarr and set monitored=false so Radarr
+    stops upgrading it (e.g. when user chose a specific quality/audio)."""
+    movies = await _get("radarr", "/movie")
+    match = next((m for m in movies if m.get("tmdbId") == tmdb_id), None)
+    if not match:
+        return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
+    match["monitored"] = False
+    await _put("radarr", f"/movie/{match['id']}", match)
+    return {"title": match.get("title"), "tmdbId": tmdb_id, "monitored": False}
+
+
 async def missing(limit: int = 15) -> dict:
     params = {"pageSize": limit, "monitored": "true"}
     radarr, sonarr = await asyncio.gather(

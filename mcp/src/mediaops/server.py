@@ -140,6 +140,17 @@ async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | Non
 
 
 @mcp.tool()
+async def media_unmonitor(tmdb_id: int) -> str:
+    """Stop Radarr from upgrading a movie (set monitored=false). Use this after
+    a user explicitly chooses a lower-quality or alternate-audio version so
+    Radarr's quality cutoff doesn't replace it automatically."""
+    try:
+        return _dumps(await arr_media.unmonitor_movie(tmdb_id))
+    except Exception as err:
+        return f"media_unmonitor failed: {err}"
+
+
+@mcp.tool()
 async def requests_pending() -> str:
     """List Jellyseerr requests waiting for approval (requestId, media,
     who asked, when)."""

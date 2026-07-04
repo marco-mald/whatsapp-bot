@@ -132,14 +132,15 @@ Todo lo demás → herramientas obligatorias.`;
 // media — nothing that changes server config, restarts, or deletes.
 const RESTRICTED_TOOLS = [
   'library_search',
-  'library_trending', // lets the bot actually recommend something on request
+  'library_trending',
   'media_add',
+  'media_unmonitor',
   'downloads_status',
   'media_queue',
   'library_missing',
   'system_status',
   'subtitles_missing',
-  'subtitles_search', // convenience: users can add subs to their own content
+  'subtitles_search',
 ].map((t) => `mcp__mediaops__${t}`).join(',');
 
 async function runOnce(args) {

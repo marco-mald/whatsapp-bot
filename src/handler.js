@@ -131,7 +131,10 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
         'Si no existe versión con ese audio, dile honestamente que solo está disponible en el idioma actual ' +
         'y ofrece agregar subtítulos como alternativa.\n' +
         'CALIDAD: Si la versión actual de una película está en 720p y existe en 1080p, infórmale al usuario ' +
-        'y pregúntale si quiere que la agregue en mejor calidad (media_add con la versión 1080p).'
+        'y pregúntale si quiere que la agregue en mejor calidad (media_add con la versión 1080p).\n' +
+        'IMPORTANTE — UNMONITOR: Cuando un usuario elija explícitamente una versión de menor calidad o diferente ' +
+        'audio (ej: 720p español sobre 1080p inglés), DESPUÉS de que se agregue con media_add, llama ' +
+        'media_unmonitor con el tmdbId para que Radarr NO la reemplace automáticamente por su política de calidad.'
     );
     lines.push(
       'Tu propósito es el servidor de medios, NO platicar ni que te usen de juguete. ' +
