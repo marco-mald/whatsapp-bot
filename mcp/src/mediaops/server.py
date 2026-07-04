@@ -376,6 +376,17 @@ async def analytics_library() -> str:
 
 
 @mcp.tool()
+async def library_catalog() -> str:
+    """Full list of all movies and series currently available in the library
+    (only titles that have files downloaded). Use when someone asks 'what do
+    we have', 'show me the catalog', 'list all movies', etc."""
+    try:
+        return _dumps(await analytics.library_catalog())
+    except Exception as err:
+        return f"library_catalog failed: {err}"
+
+
+@mcp.tool()
 async def memory_recall() -> str:
     """Saved preferences and standing decisions (e.g. 'Latino audio preferred',
     'nothing over 8GB'). Check this before media or quality decisions."""

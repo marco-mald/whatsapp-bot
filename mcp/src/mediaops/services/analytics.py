@@ -65,3 +65,28 @@ async def library_summary() -> dict:
         "series": {"total": len(sonarr_series), "episodes": total_eps, "episodes_downloaded": have_eps},
         "library_size_gb": size_gb,
     }
+
+
+async def library_catalog() -> dict:
+    """List all movies and series currently available in the library."""
+    from .arr_media import _get
+
+    radarr_movies, sonarr_series = await asyncio.gather(
+        _get("radarr", "/movie"),
+        _get("sonarr", "/series"),
+    )
+    movies = [
+        {"title": m.get("title"), "year": m.get("year"), "tmdbId": m.get("tmdbId")}
+        for m in radarr_movies
+        if m.get("hasFile")
+    ]
+    movies.sort(key=lambda m: m.get("title", "").lower())
+
+    series = [
+        {"title": s.get("title"), "year": s.get("year"), "tmdbId": s.get("tvdbId")}
+        for s in sonarr_series
+        if (s.get("statistics") or {}).get("episodeFileCount", 0) > 0
+    ]
+    series.sort(key=lambda s: s.get("title", "").lower())
+
+    return {"movies": movies, "series": series}

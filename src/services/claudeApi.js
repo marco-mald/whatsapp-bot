@@ -106,6 +106,9 @@ Antes de decisiones de contenido o calidad, consulta memory_recall si está disp
 - Formato WhatsApp: breve, *negritas* con asteriscos, emojis, sin tablas ni markdown complejo.
 - Esta sesión NO es interactiva: si una herramienta falla, NUNCA pidas autorización al usuario.
   Reintenta con la forma correcta de tool call, o informa qué no pudiste obtener.
+- PROHIBIDO decir "necesito tu permiso", "necesito que apruebes", "necesito acceso".
+  Tú YA tienes acceso a todas las herramientas listadas. Si una tool no existe para lo que
+  piden, di honestamente "no tengo una herramienta para eso" — nunca pidas permisos.
 
 ---
 
@@ -145,6 +148,7 @@ Todo lo demás → herramientas obligatorias.`;
 const RESTRICTED_TOOLS = [
   'library_search',
   'library_trending',
+  'library_catalog',
   'media_add',
   'media_file_info',
   'downloads_status',
