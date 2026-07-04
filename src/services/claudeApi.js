@@ -154,6 +154,7 @@ const RESTRICTED_TOOLS = [
   'library_missing',
   'system_status',
   'analytics_storage',
+  'optimization_report',
   'subtitles_missing',
   'subtitles_search',
 ].map((t) => `mcp__mediaops__${t}`).join(',');
