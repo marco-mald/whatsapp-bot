@@ -139,6 +139,8 @@ async def movie_file_info(tmdb_id: int) -> dict:
     audio_codec = media_info.get("audioCodec", "")
     video_codec = media_info.get("videoCodec", "")
     resolution = media_info.get("resolution", "")
+    # Embedded subtitle languages per ffprobe (e.g. "eng/spa"); empty = none
+    subtitles = media_info.get("subtitles", "")
 
     quality = (movie_file.get("quality") or {}).get("quality", {})
 
@@ -151,6 +153,7 @@ async def movie_file_info(tmdb_id: int) -> dict:
         "videoCodec": video_codec,
         "audioCodec": audio_codec,
         "audioLanguages": audio_languages,
+        "subtitles": subtitles or "ninguno integrado",
         "fileLanguages": languages,
         "size_gb": round(movie_file.get("size", 0) / 1073741824, 2),
         "path": movie_file.get("relativePath", ""),

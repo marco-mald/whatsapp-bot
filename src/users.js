@@ -25,4 +25,15 @@ function getUser(senderJid, senderPn) {
   return null;
 }
 
-module.exports = { getUser };
+// Looks up a user by their Jellyseerr identity (webhook payloads carry the
+// username; some flows have the numeric id). Returns { phone, ...user } or null.
+function findByJellyseerr({ username, id } = {}) {
+  const uname = (username || '').trim().toLowerCase();
+  for (const [phone, user] of Object.entries(USERS)) {
+    if (id != null && user.jellyseerrId === id) return { phone, ...user };
+    if (uname && (user.displayName || '').trim().toLowerCase() === uname) return { phone, ...user };
+  }
+  return null;
+}
+
+module.exports = { getUser, findByJellyseerr };

@@ -1,5 +1,6 @@
 const http = require('http');
-const { notify } = require('./notifications');
+const { notify, adminChatId } = require('./notifications');
+const { findByJellyseerr } = require('./users');
 const { claudeChat } = require('./services/claudeApi');
 
 // Receives push events from Radarr / Sonarr / Jellyseerr so the bot never
@@ -39,7 +40,7 @@ async function diagnose(context) {
 
   try {
     const { reply } = await claudeChat(prompt);
-    await notify(`🧠 *Diagnóstico automático:*\n\n${reply}`);
+    await notify(`🧠 *Diagnóstico automático:*\n\n${reply}`, { chatIds: [adminChatId()] });
   } catch (err) {
     console.error('[Webhooks] Falló el diagnóstico automático:', err.message);
   }
@@ -74,21 +75,21 @@ async function handleArr(source, payload) {
       return;
     }
     if (isDuplicate(`health:${source}:${payload.message}`)) return;
-    await notify(`⚠️ *Aviso técnico (${source}):*\n${payload.message}`);
+    await notify(`⚠️ *Aviso técnico (${source}):*\n${payload.message}`, { chatIds: [adminChatId()] });
     diagnose(`HealthIssue nivel error en ${source}: ${payload.message}`).catch(() => {});
     return;
   }
 
   if (event === 'HealthRestored') {
     if (payload.level !== 'error') return;
-    await notify(`✅ *Resuelto (${source}):*\n${payload.message}`);
+    await notify(`✅ *Resuelto (${source}):*\n${payload.message}`, { chatIds: [adminChatId()] });
     return;
   }
 
   if (event === 'ManualInteractionRequired') {
     const media = describeMedia(source, payload);
     if (isDuplicate(`manual:${source}:${media}`)) return;
-    await notify(`⚠️ *Descarga atorada:* ${media}\nRequiere intervención manual en ${source}.`);
+    await notify(`⚠️ *Descarga atorada:* ${media}\nRequiere intervención manual en ${source}.`, { chatIds: [adminChatId()] });
     diagnose(`Descarga atorada (ManualInteractionRequired) en ${source} para: ${media}`).catch(() => {});
     return;
   }
@@ -97,6 +98,18 @@ async function handleArr(source, payload) {
 }
 
 // ---- Jellyseerr ------------------------------------------------------------
+
+// Route a request event to the requester's own group only (Nickole's requests
+// → her group, family requests → the family group). Unknown requester →
+// Debug, so no group gets someone else's noise.
+function requesterRoute(requestedBy) {
+  const user = findByJellyseerr({ username: requestedBy });
+  if (!user?.notifyChatId) {
+    console.warn(`[Webhooks] Solicitante "${requestedBy || '?'}" sin grupo asignado — aviso solo a Debug`);
+    return { chatIds: [adminChatId()], user: null };
+  }
+  return { chatIds: [user.notifyChatId], user };
+}
 
 async function handleJellyseerr(payload) {
   const type = payload.notification_type;
@@ -110,24 +123,29 @@ async function handleJellyseerr(payload) {
 
   if (type === 'MEDIA_AVAILABLE') {
     if (isDuplicate(`available:${subject}`)) return;
-    const byLine = requestedBy ? `\nPedido por: *${requestedBy}*` : '';
+    const { chatIds, user } = requesterRoute(requestedBy);
+    // Real @mention so WhatsApp pings the requester
+    const who = user ? `@${user.phone} ` : (requestedBy ? `*${requestedBy}*: ` : '');
+    const mentions = user ? [`${user.phone}@s.whatsapp.net`] : [];
     await notify(
-      `🍿 *${subject}* ya está listo para ver ✅${byLine}\n\n🎬 https://ver.kiguisore.com`,
-      { imageUrl: payload.image || undefined }
+      `🍿 ${who}tu descarga está lista: *${subject}* ✅\n\n🎬 https://ver.kiguisore.com`,
+      { imageUrl: payload.image || undefined, chatIds, mentions }
     );
     return;
   }
 
   if (type === 'MEDIA_APPROVED' || type === 'MEDIA_AUTO_APPROVED') {
     if (isDuplicate(`approved:${subject}`)) return;
+    const { chatIds } = requesterRoute(requestedBy);
     const byLine = requestedBy ? ` (pedido por *${requestedBy}*)` : '';
-    await notify(`📥 *${subject}* aprobado${byLine} — descargando…`);
+    await notify(`📥 *${subject}* aprobado${byLine} — descargando…`, { chatIds });
     return;
   }
 
   if (type === 'MEDIA_FAILED') {
     if (isDuplicate(`failed:${subject}`)) return;
-    await notify(`❌ *${subject}* falló al procesarse.`);
+    const { chatIds } = requesterRoute(requestedBy);
+    await notify(`❌ *${subject}* falló al procesarse.`, { chatIds });
     diagnose(`Jellyseerr reporta MEDIA_FAILED para "${subject}". Mensaje: ${payload.message || 'n/a'}`).catch(() => {});
     return;
   }

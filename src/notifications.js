@@ -75,10 +75,16 @@ function targetChatIds() {
   return (process.env.TARGET_CHAT_ID || '').split(',').map((s) => s.trim()).filter(Boolean);
 }
 
-async function deliver({ text, imageUrl }) {
-  const chatIds = targetChatIds();
+// The Debug group: technical/admin-only notifications land here, and it is
+// the fallback destination when a requester can't be mapped to a group.
+function adminChatId() {
+  return (process.env.ADMIN_CHAT_ID || '').trim() || targetChatIds()[0];
+}
+
+async function deliver({ text, imageUrl, chatIds, mentions }) {
+  const targets = chatIds?.length ? chatIds : targetChatIds();
   const sock = sockRef?.current;
-  if (!chatIds.length || !sock) throw new Error('sin socket activo o TARGET_CHAT_ID');
+  if (!targets.length || !sock) throw new Error('sin socket activo o destino');
 
   let image = null;
   if (imageUrl) {
@@ -90,10 +96,11 @@ async function deliver({ text, imageUrl }) {
     }
   }
 
+  const extra = mentions?.length ? { mentions } : {};
   let delivered = 0;
-  for (const chatId of chatIds) {
+  for (const chatId of targets) {
     try {
-      await sock.sendMessage(chatId, image ? { image, caption: text } : { text });
+      await sock.sendMessage(chatId, image ? { image, caption: text, ...extra } : { text, ...extra });
       delivered++;
     } catch (err) {
       console.error(`[Notify] Error enviando a ${chatId}:`, err.message);
@@ -103,15 +110,17 @@ async function deliver({ text, imageUrl }) {
 }
 
 // Main entry point: sends now, or queues during quiet hours.
-async function notify(text, { imageUrl } = {}) {
+// opts.chatIds routes to specific groups (default: all TARGET_CHAT_ID);
+// opts.mentions is a list of JIDs to @-mention (text must contain @<number>).
+async function notify(text, { imageUrl, chatIds, mentions } = {}) {
   if (inQuietHours()) {
     const queue = loadQueue();
-    queue.push({ text, ts: Date.now() });
+    queue.push({ text, ts: Date.now(), chatIds: chatIds || null, mentions: mentions || null });
     saveQueue(queue);
     console.log(`[Notify] Horario de no molestar — encolado (${queue.length} pendientes)`);
     return 'queued';
   }
-  await deliver({ text, imageUrl });
+  await deliver({ text, imageUrl, chatIds, mentions });
   console.log(`[Notify] Enviado: ${text.split('\n')[0].slice(0, 70)}`);
   return 'sent';
 }
@@ -122,18 +131,31 @@ async function flushQueue() {
   if (!queue.length) return;
 
   saveQueue([]);
-  const items = queue
-    .map((i) => `• ${i.text.replace(/\s*\n+\s*/g, ' — ').slice(0, 220)}`)
-    .join('\n');
-  const text = `🌙 *Mientras dormías* (${queue.length} aviso${queue.length !== 1 ? 's' : ''}):\n\n${items}`;
 
-  try {
-    await deliver({ text });
-    console.log(`[Notify] Digest matutino enviado (${queue.length} avisos)`);
-  } catch (err) {
-    saveQueue(queue); // re-queue, retry on next tick
-    console.error('[Notify] Error enviando digest, reintentará:', err.message);
+  // Queued items can have different destinations — build one digest per chat.
+  const byChat = new Map();
+  for (const item of queue) {
+    const targets = item.chatIds?.length ? item.chatIds : targetChatIds();
+    for (const chatId of targets) {
+      if (!byChat.has(chatId)) byChat.set(chatId, { items: [], mentions: new Set() });
+      const entry = byChat.get(chatId);
+      entry.items.push(`• ${item.text.replace(/\s*\n+\s*/g, ' — ').slice(0, 220)}`);
+      for (const m of item.mentions || []) entry.mentions.add(m);
+    }
   }
+
+  const failed = [];
+  for (const [chatId, { items, mentions }] of byChat) {
+    const text = `🌙 *Mientras dormías* (${items.length} aviso${items.length !== 1 ? 's' : ''}):\n\n${items.join('\n')}`;
+    try {
+      await deliver({ text, chatIds: [chatId], mentions: [...mentions] });
+    } catch (err) {
+      console.error(`[Notify] Error enviando digest a ${chatId}, reintentará:`, err.message);
+      failed.push(...queue.filter((i) => (i.chatIds?.length ? i.chatIds : targetChatIds()).includes(chatId)));
+    }
+  }
+  if (failed.length) saveQueue([...loadQueue(), ...failed]); // retry on next tick
+  else console.log(`[Notify] Digest matutino enviado (${queue.length} avisos)`);
 }
 
 function setupNotifications(ref) {
@@ -148,4 +170,4 @@ function setupNotifications(ref) {
   );
 }
 
-module.exports = { setupNotifications, notify, inQuietHours, inTimeWindow, targetChatIds };
+module.exports = { setupNotifications, notify, inQuietHours, inTimeWindow, targetChatIds, adminChatId };

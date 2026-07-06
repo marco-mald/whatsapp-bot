@@ -1,7 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
-const { notify, inTimeWindow } = require('./notifications');
+const { notify, inTimeWindow, adminChatId } = require('./notifications');
 
 // Night maintenance worker: drains the Media Manager normalization backlog,
 // up to OPTIMIZE_CONCURRENCY files at a time (default 2, matching Media
@@ -91,7 +91,8 @@ async function sendMorningSummary(state) {
   }
   state.night = null;
   try {
-    await notify(lines.join('\n'));
+    // Maintenance detail is admin noise for the family — Debug group only.
+    await notify(lines.join('\n'), { chatIds: [adminChatId()] });
   } catch (err) {
     console.error('[Optimizer] Error enviando resumen:', err.message);
   }

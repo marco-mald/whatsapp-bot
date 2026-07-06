@@ -65,10 +65,17 @@ instead). The bot only reacts inside groups:
 
 ## Automatic behavior
 
-- **Push notifications** (to `TARGET_CHAT_ID`, the group; DMs don't work):
-  request approved 📥, media available 🍿 (with poster and requester),
-  download failed ❌, technical errors ⚠️. Sources: Radarr/Sonarr/Jellyseerr
-  webhooks registered as "Marcobot" pointing to `:3010/hooks/<source>?token=…`.
+- **Push notifications** (DMs don't work; everything goes to groups), routed
+  by audience:
+  - *Request lifecycle* (approved 📥, available 🍿, failed ❌) goes **only to
+    the requester's group** — each user in `data/users.local.json` has a
+    `notifyChatId`; unknown requesters fall back to the Debug group. The
+    "available" notice @-mentions the requester (real WhatsApp mention).
+  - *Technical/admin* (health errors ⚠️, stuck downloads, automatic diagnosis
+    🧠, night-optimizer summary 🔧) goes **only to `ADMIN_CHAT_ID`** (Debug).
+  - Sources: Radarr/Sonarr/Jellyseerr webhooks registered as "Marcobot"
+    pointing to `:3010/hooks/<source>?token=…`. `TARGET_CHAT_ID` remains the
+    default for broadcasts (e.g. Sunday trending).
 - **Automatic diagnosis**: failure events trigger a Claude run (MCP-locked,
   max 1 per 30 min, 6 h dedupe) that posts probable cause + suggested action.
 - **Quiet hours** (`QUIET_HOURS`, default 22:00–08:00): notifications queue in
@@ -140,9 +147,11 @@ cd mcp && uv venv && uv pip install -e .
 ```
 
 `.env` keys: `JELLYSEERR_URL/API_KEY`, `QBIT_URL/USER/PASS`, `TARGET_CHAT_ID`
-(group JID for notifications), `TIMEZONE`, `ADMIN_NUMBER`, `ADMIN_GROUP_NAME`
-(default `Debug`), `ADMIN_CHAT_IDS` (optional extra admin chat JIDs),
-`WEBHOOK_PORT/TOKEN`, `QUIET_HOURS`, `JELLYFIN_URL/API_KEY`, `OPTIMIZE_WINDOW`.
+(group JIDs for broadcast notifications), `ADMIN_CHAT_ID` (Debug group JID —
+technical notifications + fallback), `TIMEZONE`, `ADMIN_NUMBER`,
+`ADMIN_GROUP_NAME` (default `Debug`), `ADMIN_CHAT_IDS` (optional extra admin
+chat JIDs), `WEBHOOK_PORT/TOKEN`, `QUIET_HOURS`, `JELLYFIN_URL/API_KEY`,
+`OPTIMIZE_WINDOW`.
 
 One-time host config:
 
@@ -171,7 +180,8 @@ Streaming-first, low disk (decided 2026-07-03):
 
 ## Data files (`data/`, gitignored)
 
-- `users.local.json` — WhatsApp phone → Jellyseerr account map (see src/users.js)
+- `users.local.json` — WhatsApp phone → Jellyseerr account map (see src/users.js);
+  per-user `notifyChatId` = the group that receives that user's request notifications
 - `notify-queue.json` — notifications held during quiet hours
 - `optimizer-state.json` — night worker state (current job, failed files, night stats)
 - `preferences.json` — agent memory (standing decisions, preferences)

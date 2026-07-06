@@ -222,7 +222,8 @@ async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | Non
 @mcp.tool()
 async def media_file_info(tmdb_id: int) -> str:
     """Details of the downloaded FILE of a MOVIE: quality, resolution, codecs,
-    audioLanguages, size_gb, monitored. tmdb_id from library_search. MOVIES
+    audioLanguages, subtitles (embedded), size_gb, monitored. tmdb_id from
+    library_search. MOVIES
     ONLY — it cannot inspect series episodes; if asked about a series' audio,
     say you can't check that. MANDATORY before any claim about a file's audio
     language or quality — never assume or guess. hasFile=false = the movie is
