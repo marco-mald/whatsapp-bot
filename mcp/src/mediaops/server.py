@@ -397,8 +397,8 @@ async def library_missing(limit: int = 15) -> str:
 async def subtitles_missing(limit: int = 20) -> str:
     """Items missing subtitles per Bazarr, with the missing languages AND the
     exact ids that subtitles_search needs (radarrId for movies,
-    sonarrEpisodeId for episodes). Always call this first — those ids cannot
-    be guessed and are NOT tmdbIds."""
+    sonarrSeriesId for series episodes). Always call this first — those ids
+    cannot be guessed and are NOT tmdbIds."""
     try:
         return _dumps(await bazarr.wanted(limit))
     except Exception as err:
@@ -407,17 +407,18 @@ async def subtitles_missing(limit: int = 20) -> str:
 
 @mcp.tool()
 async def subtitles_search(media_type: str, item_id: int) -> str:
-    """Trigger ONE subtitle search in Bazarr. media_type 'movie' (item_id =
-    radarrId) or 'episode' (item_id = sonarrEpisodeId); ids ONLY from
-    subtitles_missing — never a tmdbId. Bazarr downloads the best match by
-    itself, may take minutes, and can find nothing: say 'búsqueda iniciada',
-    never promise or claim the subtitle was found."""
+    """Trigger a missing-subtitles search in Bazarr. media_type 'movie'
+    (item_id = radarrId) or 'series' (item_id = sonarrSeriesId — searches ALL
+    missing episodes of that series); ids ONLY from subtitles_missing — never
+    a tmdbId. Bazarr downloads the best match by itself, may take minutes,
+    and can find nothing: say 'búsqueda iniciada', never promise or claim the
+    subtitle was found."""
     try:
         if media_type == "movie":
             return await bazarr.search_movie(item_id)
-        if media_type == "episode":
-            return await bazarr.search_episode(item_id)
-        return "media_type must be 'movie' or 'episode'"
+        if media_type in ("series", "episode"):
+            return await bazarr.search_series(item_id)
+        return "media_type must be 'movie' or 'series'"
     except Exception as err:
         return f"subtitles_search failed: {err}"
 

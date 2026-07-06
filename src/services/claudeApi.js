@@ -84,22 +84,23 @@ async function runOnce(args) {
 
   const data = JSON.parse(stdout.trim());
   if (data.is_error) throw new Error(data.result || 'Error desconocido del CLI');
-  return { reply: data.result, sessionId: data.session_id };
+  return { reply: data.result };
 }
 
-// Calls the local `claude` CLI in print mode. Modes:
-//   'full'       — unrestricted (admin surfaces: Marco's DM + Debug group)
-//   'mediaops'   — all mediaops MCP tools, nothing else (internal: auto-diagnosis)
-//   'restricted' — least-privilege MCP toolset (everyone else)
-// extraContext is appended to the system prompt (speaker identity, permissions).
-// sessionId = null starts a conversation; pass the returned sessionId to continue.
 // Only modes that actually have the memory tools get this instruction —
 // telling restricted users' runs to call a tool they don't have produces
 // confused/hallucinated replies.
 const MEMORY_POLICY =
   '\n\n# Políticas de contenido\nConsulta memory_recall antes de decisiones de calidad/audio.';
 
-async function claudeChat(message, sessionId = null, mode = 'mediaops', extraContext = '') {
+// Calls the local `claude` CLI in print mode. Modes:
+//   'full'       — unrestricted (admin surface: Debug group)
+//   'mediaops'   — all mediaops MCP tools, nothing else (internal: auto-diagnosis)
+//   'restricted' — least-privilege MCP toolset (everyone else)
+// extraContext is appended to the system prompt (speaker identity, permissions,
+// rolling conversation history). Every run is fresh — continuity comes from
+// the finite history the handler injects, not from CLI --resume sessions.
+async function claudeChat(message, mode = 'mediaops', extraContext = '') {
   const base = mode === 'restricted' ? SYSTEM_PROMPT : SYSTEM_PROMPT + MEMORY_POLICY;
   const system = extraContext ? `${base}\n\n${extraContext}` : base;
   const defaultModel = process.env.CLAUDE_MODEL || 'haiku';
@@ -128,7 +129,6 @@ async function claudeChat(message, sessionId = null, mode = 'mediaops', extraCon
     }
   }
 
-  if (sessionId) args.push('--resume', sessionId);
   args.push(message);
 
   try {

@@ -45,7 +45,16 @@ instead). The bot only reacts inside groups:
 
 - Requests are attributed: each run carries the speaker's identity, and
   `media_add` is called with their `jellyseerr_user_id`.
-- Conversations keep context per chat+user for 20 min (`exit()` or `reset` to clear).
+- Conversation continuity ([src/history.js](src/history.js)): a finite rolling
+  window (last 6 messages, ~400 chars each) per chat+user, persisted in
+  `data/chat-history.json` — no time limit, so "descarga los subtítulos" works
+  the same 2 minutes or 2 hours after the bot described a movie. The window
+  is injected into each run flagged as *use only if the current message
+  clearly continues it* (self-contained commands ignore it; real ambiguity →
+  ask). Replying (quoting) a specific message additionally passes the quoted
+  text, so the referent is explicit even beyond the window. `exit()` or
+  `reset` clears it. No CLI `--resume` sessions — every run is fresh, keeping
+  context tokens bounded.
 - Every agent run costs money — that's why groups require a mention and unknown
   numbers are dropped silently.
 - Rate limiting ([src/ratelimit.js](src/ratelimit.js)): one run at a time per
@@ -182,6 +191,8 @@ Streaming-first, low disk (decided 2026-07-03):
 
 - `users.local.json` — WhatsApp phone → Jellyseerr account map (see src/users.js);
   per-user `notifyChatId` = the group that receives that user's request notifications
+- `chat-history.json` — rolling conversation window per chat+user (finite, self-overwriting)
+- `user-memory.json` — durable per-person facts saved via `[[RECUERDA:...]]`
 - `notify-queue.json` — notifications held during quiet hours
 - `optimizer-state.json` — night worker state (current job, failed files, night stats)
 - `preferences.json` — agent memory (standing decisions, preferences)

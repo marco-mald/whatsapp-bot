@@ -8,6 +8,7 @@ const { isTimedOut, timeout } = require('./moderation');
 const { friendlyError } = require('./errors');
 const { track, complete, getPending } = require('./inflight');
 const { recall, remember, forget } = require('./usermemory');
+const history = require('./history');
 
 // Control token the LLM appends when it decides to time out an abusive user.
 // Stripped from the visible reply; the ban is enforced deterministically here.
@@ -35,35 +36,17 @@ const MEMORY_TOKEN = /\[\[RECUERDA:([^\]]+)\]\]/g;
 
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER || '';
 const ADMIN_GROUP_NAME = (process.env.ADMIN_GROUP_NAME || 'Debug').trim().toLowerCase();
-const SESSION_TTL_MS = 20 * 60 * 1000;
 
 const adminChatIds = new Set(
   (process.env.ADMIN_CHAT_IDS || '').split(',').map((s) => s.trim()).filter(Boolean)
 );
 let botIds = new Set(); // bare numbers/lids identifying the bot itself
 
-// chatJid:senderPhone → { sessionId, lastUsed }. Persisted to disk so a bot
-// restart doesn't wipe everyone's conversation context (the CLI keeps the
-// transcripts; we only need the sessionId to --resume them).
-const SESSIONS_FILE = path.join(__dirname, '..', 'data', 'sessions.json');
-
-function loadSessions() {
-  try {
-    return new Map(Object.entries(JSON.parse(fs.readFileSync(SESSIONS_FILE, 'utf8'))));
-  } catch {
-    return new Map();
-  }
-}
-
-function saveSessions() {
-  try {
-    fs.writeFileSync(SESSIONS_FILE, JSON.stringify(Object.fromEntries(sessions), null, 2));
-  } catch (err) {
-    console.error('[Handler] No pude guardar sessions.json:', err.message);
-  }
-}
-
-const sessions = loadSessions();
+// Conversation continuity comes from src/history.js: a finite rolling window
+// of the last exchanges per chat+user (no time limit — a follow-up 2 hours
+// later still has context) injected into each run's prompt. There are no CLI
+// --resume sessions anymore: every run is fresh + this window, so context
+// tokens stay bounded.
 
 function bare(jid) {
   return (jid || '').split(':')[0].split('@')[0];
@@ -118,10 +101,22 @@ function stripBotMention(text) {
   return out.replace(/\s+/g, ' ').trim();
 }
 
-function getSession(key) {
-  const s = sessions.get(key);
-  if (!s || Date.now() - s.lastUsed > SESSION_TTL_MS) return null;
-  return s;
+// When the user replies (quotes) a specific message, extract its text so the
+// model knows exactly what "esto" refers to — even if it's older than the
+// rolling history window.
+function extractQuoted(msg) {
+  const ctx =
+    msg.message?.extendedTextMessage?.contextInfo ||
+    msg.message?.imageMessage?.contextInfo;
+  const q = ctx?.quotedMessage;
+  if (!q) return null;
+  const text = (q.conversation || q.extendedTextMessage?.text || q.imageMessage?.caption || '').trim();
+  if (!text) return null;
+  const fromBot = Boolean(ctx.participant && botIds.has(bare(ctx.participant)));
+  const author = fromBot
+    ? 'del bot (tuyo)'
+    : `de ${getUser(ctx.participant || '')?.displayName || 'otra persona'}`;
+  return { text: text.slice(0, 400), author };
 }
 
 function buildContext({ user, isAdminSender, mode, chatJid, senderPhone }) {
@@ -138,6 +133,16 @@ function buildContext({ user, isAdminSender, mode, chatJid, senderPhone }) {
   const memories = senderPhone ? recall(senderPhone) : [];
   if (memories.length) {
     lines.push(`Memoria de ${name} (de conversaciones pasadas): ${memories.join('; ')}`);
+  }
+  const recent = history.getHistory(`${chatJid}:${senderPhone}`);
+  if (recent.length) {
+    const convo = recent.map((h) => `${h.role === 'bot' ? 'Tú' : name}: ${h.text}`).join('\n');
+    lines.push(
+      `Últimos mensajes con ${name} (pueden tener horas — NO asumas que siguen vigentes):\n${convo}\n` +
+        'Usa este historial SOLO si el mensaje actual claramente lo continúa (ej: "sí", "descarga los ' +
+        'subtítulos", "la segunda", "y en español?"). Si el mensaje actual es una petición autocontenida ' +
+        'o de otro tema, IGNORA el historial por completo. Si de verdad es ambiguo, pregunta — no adivines.'
+    );
   }
   lines.push(
     'Memoria: si aprendes un dato DURABLE del usuario (preferencia de audio/calidad, gustos, ' +
@@ -176,16 +181,13 @@ async function sendPosters(sock, replyJid, text) {
 
 const THINKING_REPLIES = ['🔍 Déjame checar...', '⏳ Un momento...', '🎬 Buscando...', '👀 Revisando...'];
 
-async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context, senderPhone, isAdmin }) {
-  const session = getSession(sessionKey);
+async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, mode, context, senderPhone, isAdmin }) {
   track(msg, text, mode, senderPhone);
   try {
     await sock.sendPresenceUpdate('composing', replyJid);
     const thinking = THINKING_REPLIES[Math.floor(Math.random() * THINKING_REPLIES.length)];
     await sock.sendMessage(replyJid, { text: thinking });
-    const { reply, sessionId } = await claudeChat(text, session?.sessionId, mode, context);
-    sessions.set(sessionKey, { sessionId, lastUsed: Date.now() });
-    saveSessions();
+    const { reply } = await claudeChat(text, mode, context);
 
     // Moderation: the LLM appends [[TIMEOUT:N]] to ban a persistent abuser.
     // Enforce the ban here, strip the token from what the user sees. Admin immune.
@@ -209,6 +211,8 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
     } else {
       console.warn('[NL] Respuesta vacía del CLI — no se envió nada');
     }
+    history.record(sessionKey, 'user', historyText || text);
+    history.record(sessionKey, 'bot', visible);
     await sendPosters(sock, replyJid, withPosters);
   } catch (err) {
     console.error(
@@ -277,16 +281,14 @@ async function messageHandler(sock, msg) {
 
   const lower = text.toLowerCase();
   if (lower === 'exit()' || lower === 'reset') {
-    sessions.delete(sessionKey);
-    saveSessions();
+    history.clear(sessionKey);
     await sock.sendMessage(replyJid, { text: '🔄 Conversación reiniciada.' });
     return;
   }
 
   if (lower === 'olvidame' || lower === 'olvídame') {
     const had = forget(senderPhone);
-    sessions.delete(sessionKey);
-    saveSessions();
+    history.clear(sessionKey);
     await sock.sendMessage(replyJid, {
       text: had ? '🧠 Listo, borré todo lo que recordaba de ti.' : '🤷 No tenía nada guardado de ti.',
     });
@@ -303,6 +305,8 @@ async function messageHandler(sock, msg) {
       await sock.sendMessage(replyJid, {
         react: { text: '👍', key: msg.key },
       });
+      // The declined offer matters for the next run's context ("no" → don't re-offer)
+      history.record(sessionKey, 'user', cleanText);
     } catch (err) {
       console.error('[Handler] Error reaccionando:', err.message);
     }
@@ -318,10 +322,17 @@ async function messageHandler(sock, msg) {
 
   console.log(`[NL] ${user?.displayName || senderPhone} (${mode}) @ ${msg.key.remoteJid}: ${cleanText.slice(0, 80)}`);
 
+  // Replying to a specific message pins the referent explicitly (beats any
+  // ambiguity, and works even for messages older than the history window)
+  const quoted = extractQuoted(msg);
+  const promptText = quoted
+    ? `[${user?.displayName || 'El usuario'} responde a este mensaje ${quoted.author}: "${quoted.text}"]\n${cleanText}`
+    : cleanText;
+
   const context = buildContext({ user, isAdminSender, mode, chatJid: msg.key.remoteJid, senderPhone });
   try {
     await runClaude(sock, msg, {
-      text: cleanText, replyJid, sessionKey, mode, context,
+      text: promptText, historyText: cleanText, replyJid, sessionKey, mode, context,
       senderPhone, isAdmin: isAdminSender,
     });
   } finally {

@@ -52,6 +52,7 @@ async def wanted(limit: int = 20) -> dict:
                     "series": e.get("seriesTitle"),
                     "episode": e.get("episode_number"),
                     "sonarrEpisodeId": e.get("sonarrEpisodeId"),
+                    "sonarrSeriesId": e.get("sonarrSeriesId"),
                     "missing": [s["name"] for s in e.get("missing_subtitles", [])],
                 }
                 for e in episodes.get("data", [])
@@ -61,10 +62,13 @@ async def wanted(limit: int = 20) -> dict:
 
 
 async def search_movie(radarr_id: int) -> str:
-    await _request("PATCH", "/movies", {"action": "search", "radarrid": radarr_id})
+    # Bazarr's action is "search-missing" ("search" returns 400)
+    await _request("PATCH", "/movies", {"action": "search-missing", "radarrid": radarr_id})
     return f"subtitle search triggered for movie radarrId={radarr_id}"
 
 
-async def search_episode(sonarr_episode_id: int) -> str:
-    await _request("PATCH", "/episodes", {"action": "search", "episodeid": sonarr_episode_id})
-    return f"subtitle search triggered for episode id={sonarr_episode_id}"
+async def search_series(sonarr_series_id: int) -> str:
+    # Bazarr has no per-episode search action; series-level search-missing
+    # covers every episode of the series that lacks subtitles.
+    await _request("PATCH", "/series", {"action": "search-missing", "seriesid": sonarr_series_id})
+    return f"subtitle search triggered for all missing episodes of seriesId={sonarr_series_id}"
