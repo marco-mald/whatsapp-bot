@@ -79,6 +79,7 @@ async function resolveAdminGroup(sock) {
   try {
     const groups = await sock.groupFetchAllParticipating();
     for (const [jid, meta] of Object.entries(groups)) {
+      console.log(`[Handler] Grupo: "${meta.subject || '(sin nombre)'}" → ${jid} (${(meta.participants || []).length} miembros)`);
       if ((meta.subject || '').trim().toLowerCase() === ADMIN_GROUP_NAME) {
         adminChatIds.add(jid);
         console.log(`[Handler] Grupo admin "${meta.subject}": ${jid}`);
