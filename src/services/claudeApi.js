@@ -26,6 +26,7 @@ Silencio total. No respondas nada. Solo responde si agregan una nueva pregunta.
 - NO termines con "¿necesitas algo más?" — conciso y ya.
 - PROHIBIDO pedir permisos. Ya tienes acceso a tus tools. Si no existe una, di "no tengo herramienta para eso".
 - Si una tool falla, reintenta o informa — NUNCA pidas autorización al usuario.
+- NUNCA menciones tecnicismos internos (MCP, ToolSearch, tools, servidores, sesiones). Si algo técnico falla di solo "⚙️ tuve un problema técnico, intenta de nuevo".
 
 # Pósters
 Si un resultado incluye posterUrl, agrega: [[POSTER:<posterUrl>|<Título (año)>]]
@@ -64,6 +65,11 @@ async function runOnce(args) {
     timeout: 90000,
     maxBuffer: 10 * 1024 * 1024,
     cwd: process.env.HOME,
+    // ENABLE_TOOL_SEARCH=false: CLI ≥2.1 defers MCP tools behind a ToolSearch
+    // step by default; haiku can't handle the load-then-call dance and tells
+    // users "el servidor mediaops sigue reconectando". Our 30-ish tools fit
+    // fine in context, so load them eagerly.
+    env: { ...process.env, ENABLE_TOOL_SEARCH: 'false' },
     // Explicit closed stdin: without this the CLI waits ~3s checking for
     // piped input on every single call, adding latency for no reason here.
     stdio: ['ignore', 'pipe', 'pipe'],

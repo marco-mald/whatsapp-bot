@@ -2,7 +2,8 @@
   "mcpServers": {
     "mediaops": {
       "command": "/home/marko_mald/Downloads/marcobot/mcp/.venv/bin/python",
-      "args": ["-m", "mediaops.server"]
+      "args": ["-m", "mediaops.server"],
+      "alwaysLoad": true
     }
   }
 }
