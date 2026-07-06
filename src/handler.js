@@ -7,6 +7,7 @@ const { tryAcquire, release, REJECT_MESSAGE } = require('./ratelimit');
 const { isTimedOut, timeout } = require('./moderation');
 const { friendlyError } = require('./errors');
 const { track, complete, getPending } = require('./inflight');
+const { recall, remember, forget } = require('./usermemory');
 
 // Control token the LLM appends when it decides to time out an abusive user.
 // Stripped from the visible reply; the ban is enforced deterministically here.
@@ -16,6 +17,11 @@ const TIMEOUT_TOKEN = /\[\[TIMEOUT:(\d{1,3})\]\]/;
 // send the real poster image alongside the text (Claude's output is text-only).
 const POSTER_TOKEN = /\[\[POSTER:([^|\]]+)\|([^\]]+)\]\]/g;
 const MAX_POSTERS = 4;
+
+// Control token the LLM emits to persist a durable fact about the speaker
+// (preference, habit, standing request). Saved keyed by the sender's phone —
+// the model never picks whose memory it writes to. Stripped from the reply.
+const MEMORY_TOKEN = /\[\[RECUERDA:([^\]]+)\]\]/g;
 
 // Natural-language-only router with least-privilege access. Groups only —
 // DMs are ignored entirely (unreliable delivery, and a common source of
@@ -117,7 +123,7 @@ function getSession(key) {
   return s;
 }
 
-function buildContext({ user, isAdminSender, mode, chatJid }) {
+function buildContext({ user, isAdminSender, mode, chatJid, senderPhone }) {
   const name = user?.displayName || (isAdminSender ? 'Marco' : 'desconocido');
   const lines = [
     `Usuario: ${name}` +
@@ -128,13 +134,27 @@ function buildContext({ user, isAdminSender, mode, chatJid }) {
   if (Array.isArray(user?.notas) && user.notas.length) {
     lines.push(`Notas (usa con criterio, no fuerces): ${user.notas.slice(0, 5).join('; ')}`);
   }
+  const memories = senderPhone ? recall(senderPhone) : [];
+  if (memories.length) {
+    lines.push(`Memoria de ${name} (de conversaciones pasadas): ${memories.join('; ')}`);
+  }
+  lines.push(
+    'Memoria: si aprendes un dato DURABLE del usuario (preferencia de audio/calidad, gustos, ' +
+      'algo que pidió y quedó pendiente), agrega [[RECUERDA:dato breve]] al final de tu respuesta. ' +
+      'Solo hechos que sirvan en futuras conversaciones, no eventos puntuales. No menciones el tag ' +
+      'ni repitas lo que ya está en su memoria.'
+  );
   if (mode === 'restricted') {
     lines.push(
       `Modo restringido. media_add siempre con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'}. ` +
         'Series: solo 1 temporada (seasons=[N]), pregunta cuál. ' +
-        'Sin tools de admin — si piden reinicios/borrar, dile que eso lo hace Marco.\n' +
-        'Audio/calidad: SIEMPRE usa media_file_info antes de afirmar idioma o resolución. ' +
+        'Las solicitudes se auto-aprueban al instante — nunca digas que algo "quedó pendiente de aprobación". ' +
+        'Sin tools de admin — si piden reinicios, borrar archivos o cambiar config, dile que eso lo hace Marco.\n' +
+        'Audio/calidad: SIEMPRE usa media_file_info antes de afirmar idioma o resolución (solo funciona ' +
+        'para películas; para series di que no puedes verificarlo). ' +
         'Si eligen versión inferior, avisa que Marco debe desactivar monitoreo.\n' +
+        `Borrar torrents (downloads_delete): siempre con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} — ` +
+        'la tool solo borra lo pedido por esa persona; lo que venga en "refused" NO se borró, explica que eso solo lo quita Marco.\n' +
         'Vacile: 1) pide que pare 2) roast con datos personales 3) agrega [[TIMEOUT:15]] al final.'
     );
   }
@@ -174,7 +194,11 @@ async function runClaude(sock, msg, { text, replyJid, sessionKey, mode, context,
       console.log(`[Mod] Timeout ${mins}min a ${senderPhone} (vacile persistente)`);
     }
 
-    const withPosters = reply.replace(TIMEOUT_TOKEN, '');
+    for (const [, note] of reply.matchAll(MEMORY_TOKEN)) {
+      remember(senderPhone, note);
+    }
+
+    const withPosters = reply.replace(TIMEOUT_TOKEN, '').replace(MEMORY_TOKEN, '');
     const visible = withPosters.replace(POSTER_TOKEN, '').trim();
 
     const out = visible.length > 59000 ? visible.slice(0, 59000) + '\n\n_[truncado]_' : visible;
@@ -258,6 +282,16 @@ async function messageHandler(sock, msg) {
     return;
   }
 
+  if (lower === 'olvidame' || lower === 'olvídame') {
+    const had = forget(senderPhone);
+    sessions.delete(sessionKey);
+    saveSessions();
+    await sock.sendMessage(replyJid, {
+      text: had ? '🧠 Listo, borré todo lo que recordaba de ti.' : '🤷 No tenía nada guardado de ti.',
+    });
+    return;
+  }
+
   const cleanText = stripBotMention(text);
   if (!cleanText) return;
 
@@ -283,7 +317,7 @@ async function messageHandler(sock, msg) {
 
   console.log(`[NL] ${user?.displayName || senderPhone} (${mode}) @ ${msg.key.remoteJid}: ${cleanText.slice(0, 80)}`);
 
-  const context = buildContext({ user, isAdminSender, mode, chatJid: msg.key.remoteJid });
+  const context = buildContext({ user, isAdminSender, mode, chatJid: msg.key.remoteJid, senderPhone });
   try {
     await runClaude(sock, msg, {
       text: cleanText, replyJid, sessionKey, mode, context,
@@ -305,7 +339,7 @@ async function retryPending(sock) {
     const isAdminSurface = adminChatIds.has(entry.remoteJid);
     const mode = isAdminSurface && isAdminSender ? 'full' : entry.mode;
     const sessionKey = `${entry.remoteJid}:${entry.senderPhone}`;
-    const context = buildContext({ user, isAdminSender, mode, chatJid: entry.remoteJid });
+    const context = buildContext({ user, isAdminSender, mode, chatJid: entry.remoteJid, senderPhone: entry.senderPhone });
 
     const fakeMsg = { key: { id: entry.msgId, remoteJid: entry.remoteJid, participant: entry.participant } };
 

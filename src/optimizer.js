@@ -3,9 +3,11 @@ const path = require('path');
 const axios = require('axios');
 const { notify, inTimeWindow } = require('./notifications');
 
-// Night maintenance worker: drains the Media Manager normalization backlog
-// one file at a time, only inside OPTIMIZE_WINDOW (default 01:00-08:00) and
-// only when nobody is streaming on Jellyfin. Deterministic — no Claude runs.
+// Night maintenance worker: drains the Media Manager normalization backlog,
+// up to OPTIMIZE_CONCURRENCY files at a time (default 2, matching Media
+// Manager's own encode-slot cap), only inside OPTIMIZE_WINDOW (default
+// 01:00-08:00) and only when nobody is streaming on Jellyfin. Deterministic
+// — no Claude runs.
 //
 // Priority: needs-fix (instant, mkvpropedit) → no-aac (minutes) → needs-video
 // (30-90 min ffmpeg re-encode). Failed files are remembered and skipped.
@@ -19,11 +21,20 @@ function windowConfig() {
   return (process.env.OPTIMIZE_WINDOW || '01:00-08:00').trim();
 }
 
+function concurrencyConfig() {
+  return parseInt(process.env.OPTIMIZE_CONCURRENCY || '2', 10);
+}
+
 function loadState() {
   try {
-    return JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    const state = JSON.parse(fs.readFileSync(STATE_PATH, 'utf8'));
+    if (!Array.isArray(state.currentJobs)) {
+      state.currentJobs = state.currentJob ? [state.currentJob] : [];
+    }
+    delete state.currentJob;
+    return state;
   } catch {
-    return { failedIds: [], night: null, currentJob: null };
+    return { failedIds: [], night: null, currentJobs: [] };
   }
 }
 
@@ -40,25 +51,26 @@ async function jellyfinPlayingCount() {
   return res.data.filter((s) => s.NowPlayingItem).length;
 }
 
-async function finishJobIfDone(state) {
-  const job = state.currentJob;
-  if (!job) return true;
-
-  const res = await axios.get(`${MM}/job/${job.jobId}`, { timeout: 10000 });
-  if (!res.data.done) return false;
-
-  const log = res.data.log || [];
-  const failed = log.some((l) => l.startsWith('ERROR:'));
-  if (failed) {
-    state.failedIds.push(job.fileId);
-    state.night.failed.push(job.name);
-    console.log(`[Optimizer] ❌ Falló: ${job.name}`);
-  } else {
-    state.night.fixed.push(job.name);
-    console.log(`[Optimizer] ✅ Normalizado: ${job.name}`);
+async function reconcileJobs(state) {
+  const stillRunning = [];
+  for (const job of state.currentJobs) {
+    const res = await axios.get(`${MM}/job/${job.jobId}`, { timeout: 10000 });
+    if (!res.data.done) {
+      stillRunning.push(job);
+      continue;
+    }
+    const log = res.data.log || [];
+    const failed = log.some((l) => l.startsWith('ERROR:'));
+    if (failed) {
+      state.failedIds.push(job.fileId);
+      state.night.failed.push(job.name);
+      console.log(`[Optimizer] ❌ Falló: ${job.name}`);
+    } else {
+      state.night.fixed.push(job.name);
+      console.log(`[Optimizer] ✅ Normalizado: ${job.name}`);
+    }
   }
-  state.currentJob = null;
-  return true;
+  state.currentJobs = stillRunning;
 }
 
 async function sendMorningSummary(state) {
@@ -93,8 +105,9 @@ async function pickCandidate(state) {
     return { candidate: null, remaining: null };
   }
 
+  const inFlight = new Set(state.currentJobs.map((j) => j.fileId));
   const pending = (scan.data.files || [])
-    .filter((f) => PRIORITY[f.status] !== undefined && !state.failedIds.includes(f.id))
+    .filter((f) => PRIORITY[f.status] !== undefined && !state.failedIds.includes(f.id) && !inFlight.has(f.id))
     .sort((a, b) => PRIORITY[a.status] - PRIORITY[b.status]);
 
   return { candidate: pending[0] || null, remaining: pending.length };
@@ -119,7 +132,7 @@ async function processCandidate(state, candidate) {
   if (fresh.status === 'no-aac' || fresh.status === 'needs-video') {
     const res = await axios.post(`${MM}/normalize`, { file_id: candidate.id }, { timeout: 15000 });
     if (res.data.job_id) {
-      state.currentJob = { jobId: res.data.job_id, fileId: candidate.id, name: fresh.name || candidate.name };
+      state.currentJobs.push({ jobId: res.data.job_id, fileId: candidate.id, name: fresh.name || candidate.name });
       console.log(`[Optimizer] ▶️ Job iniciado (${fresh.status}): ${fresh.name}`);
     }
   }
@@ -132,8 +145,8 @@ async function tick() {
   const inWindow = inTimeWindow(windowConfig());
   if (!inWindow) {
     if (state.night) {
-      const jobDone = await finishJobIfDone(state); // let a running job finish its accounting
-      if (jobDone) await sendMorningSummary(state);
+      await reconcileJobs(state); // let running jobs finish their accounting
+      if (state.currentJobs.length === 0) await sendMorningSummary(state);
     }
     saveState(state);
     return;
@@ -141,15 +154,16 @@ async function tick() {
 
   if (!state.night) state.night = { fixed: [], failed: [], remaining: null };
 
-  if (!(await finishJobIfDone(state))) {
-    saveState(state);
-    return; // a job is still running
-  }
+  await reconcileJobs(state);
 
+  const concurrency = concurrencyConfig();
   const sysinfo = await axios.get(`${MM}/sysinfo`, { timeout: 10000 });
-  if (sysinfo.data.active_jobs > 0) {
+  const foreignActive = Math.max(0, sysinfo.data.active_jobs - state.currentJobs.length);
+  const slotBudget = Math.max(0, concurrency - foreignActive);
+
+  if (state.currentJobs.length >= slotBudget) {
     saveState(state);
-    return; // something else (webhook auto-normalize) is running
+    return; // no free slots (either our own jobs or something else is using them)
   }
 
   const playing = await jellyfinPlayingCount();
@@ -159,9 +173,12 @@ async function tick() {
     return;
   }
 
-  const { candidate, remaining } = await pickCandidate(state);
-  if (remaining !== null) state.night.remaining = Math.max(0, remaining - 1);
-  if (candidate) await processCandidate(state, candidate);
+  while (state.currentJobs.length < slotBudget) {
+    const { candidate, remaining } = await pickCandidate(state);
+    if (remaining !== null) state.night.remaining = Math.max(0, remaining - 1);
+    if (!candidate) break;
+    await processCandidate(state, candidate); // needs-fix resolves instantly without using a slot
+  }
 
   saveState(state);
 }
