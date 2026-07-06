@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import time
 from functools import wraps
 
@@ -50,6 +51,44 @@ from .services import (
 )
 
 mcp = FastMCP("mediaops")
+
+# MEDIAOPS_PROFILE=restricted registers only the family-facing tools, so those
+# runs don't pay context tokens for schemas they can't call anyway (the full
+# set is ~2x the size). Keep in sync with RESTRICTED_TOOLS in
+# src/services/claudeApi.js.
+RESTRICTED_PROFILE_TOOLS = {
+    "library_search",
+    "library_trending",
+    "library_catalog",
+    "media_add",
+    "media_file_info",
+    "my_requests",
+    "downloads_status",
+    "downloads_delete",
+    "media_search_release",
+    "media_queue",
+    "library_missing",
+    "system_status",
+    "analytics_storage",
+    "optimization_report",
+    "subtitles_missing",
+    "subtitles_search",
+}
+
+if os.environ.get("MEDIAOPS_PROFILE") == "restricted":
+    _full_tool = mcp.tool
+
+    def _profile_tool(*args, **kwargs):
+        real = _full_tool(*args, **kwargs)
+
+        def decorator(fn):
+            if fn.__name__ not in RESTRICTED_PROFILE_TOOLS:
+                return fn  # skip registration entirely
+            return real(fn)
+
+        return decorator
+
+    mcp.tool = _profile_tool
 
 _UNKNOWN = "Unknown service {!r}. Valid services: " + ", ".join(SERVICE_IDS)
 

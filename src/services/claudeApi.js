@@ -5,6 +5,9 @@ const path = require('path');
 const execFileAsync = promisify(execFile);
 
 const MCP_CONFIG = path.join(__dirname, '..', '..', 'mcp', 'mediaops.mcp.json');
+// Same server with MEDIAOPS_PROFILE=restricted: only registers the 16
+// family-facing tools, so restricted runs don't pay context for the rest.
+const MCP_CONFIG_RESTRICTED = path.join(__dirname, '..', '..', 'mcp', 'mediaops-restricted.mcp.json');
 
 const SYSTEM_PROMPT = `Eres MediaOps, asistente del servidor de medios de Marco por WhatsApp.
 
@@ -91,16 +94,27 @@ async function claudeChat(message, sessionId = null, mode = 'mediaops', extraCon
   const defaultModel = process.env.CLAUDE_MODEL || 'haiku';
   const adminModel = process.env.CLAUDE_MODEL_ADMIN || 'sonnet';
   const model = mode === 'full' ? adminModel : defaultModel;
-  const args = ['-p', '--output-format', 'json', '--model', model,
-    '--mcp-config', MCP_CONFIG, '--append-system-prompt', system];
+  const args = ['-p', '--output-format', 'json', '--model', model];
 
   if (mode === 'full') {
-    args.push('--dangerously-skip-permissions');
-  } else if (mode === 'restricted') {
-    // = form: --allowedTools is variadic and would swallow the prompt argument
-    args.push('--strict-mcp-config', `--allowedTools=${RESTRICTED_TOOLS}`);
+    // Admin keeps the full Claude Code environment (built-in tools + its own
+    // system prompt, ours appended) — capability over token savings here.
+    args.push('--mcp-config', MCP_CONFIG, '--append-system-prompt', system,
+      '--dangerously-skip-permissions');
   } else {
-    args.push('--strict-mcp-config', '--allowedTools=mcp__mediaops');
+    // Token diet for non-admin runs (measured 2026-07-06, "hola" en restricted):
+    //   default CC prompt + builtins + 35 tools  → ~37.7K tokens de contexto
+    //   --system-prompt (replace) + --tools ""   → ~14.3K
+    //   + perfil MCP de 16 tools                 → ~8K
+    // Claude solo ve nuestro prompt y las tools mediaops que puede usar.
+    args.push('--system-prompt', system, '--tools', '', '--strict-mcp-config');
+    if (mode === 'restricted') {
+      args.push('--mcp-config', MCP_CONFIG_RESTRICTED,
+        // = form: --allowedTools is variadic and would swallow the prompt argument
+        `--allowedTools=${RESTRICTED_TOOLS}`);
+    } else {
+      args.push('--mcp-config', MCP_CONFIG, '--allowedTools=mcp__mediaops');
+    }
   }
 
   if (sessionId) args.push('--resume', sessionId);
