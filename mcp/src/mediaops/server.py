@@ -52,6 +52,66 @@ from .services import (
 
 mcp = FastMCP("mediaops")
 
+# Every tool call is appended to data/tool-calls.jsonl (ts, tool, args, ok,
+# duration, result head) so silent API breakage — like Bazarr's 'search' →
+# 'search-missing' rename — shows up in one grep instead of being invisible.
+# Rotated at ~2MB (single .1 backup), never unbounded.
+from pathlib import Path
+
+TOOL_LOG = Path(__file__).resolve().parents[3] / "data" / "tool-calls.jsonl"
+
+
+def _log_call(tool: str, kwargs: dict, result, secs: float) -> None:
+    try:
+        text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
+        head = text[:220]
+        ok = not (
+            "failed:" in head
+            or head.startswith("EXCEPTION")
+            or '"error"' in head
+        )
+        line = json.dumps({
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "tool": tool,
+            "args": json.dumps(kwargs, ensure_ascii=False, default=str)[:150],
+            "ok": ok,
+            "secs": round(secs, 2),
+            "result": head if not ok else head[:80],
+        }, ensure_ascii=False)
+        TOOL_LOG.parent.mkdir(exist_ok=True)
+        if TOOL_LOG.exists() and TOOL_LOG.stat().st_size > 2_000_000:
+            TOOL_LOG.rename(TOOL_LOG.with_suffix(".jsonl.1"))
+        with open(TOOL_LOG, "a", encoding="utf-8") as f:
+            f.write(line + "\n")
+    except Exception:
+        pass  # logging must never break a tool
+
+
+_unlogged_tool = mcp.tool
+
+
+def _logging_tool(*targs, **tkwargs):
+    real = _unlogged_tool(*targs, **tkwargs)
+
+    def decorator(fn):
+        @wraps(fn)
+        async def wrapper(*a, **kw):
+            t0 = time.time()
+            try:
+                out = await fn(*a, **kw)
+                _log_call(fn.__name__, kw, out, time.time() - t0)
+                return out
+            except Exception as err:
+                _log_call(fn.__name__, kw, f"EXCEPTION: {err}", time.time() - t0)
+                raise
+
+        return real(wrapper)
+
+    return decorator
+
+
+mcp.tool = _logging_tool
+
 # MEDIAOPS_PROFILE=restricted registers only the family-facing tools, so those
 # runs don't pay context tokens for schemas they can't call anyway (the full
 # set is ~2x the size). Keep in sync with RESTRICTED_TOOLS in

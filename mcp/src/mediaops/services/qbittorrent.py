@@ -53,8 +53,10 @@ async def control(action: str, torrent_hash: str = "all") -> str:
     if action not in ("pause", "resume"):
         raise ValueError("action must be 'pause' or 'resume'")
 
-    # qBittorrent v5 renamed pause/resume to stop/start; try modern name on 404
-    endpoints = {"pause": ("pause", "stop"), "resume": ("resume", "start")}
+    # qBittorrent v5 renamed pause/resume to stop/start (verified: v5.2.2
+    # 404s the legacy names). Try modern first, legacy as fallback for old
+    # installs — order flipped to avoid a guaranteed 404 round-trip on v5.
+    endpoints = {"pause": ("stop", "pause"), "resume": ("start", "resume")}
     client = await _client()
     try:
         for name in endpoints[action]:
