@@ -37,9 +37,6 @@ URL real, nunca inventada. No menciones el tag. Máx 4 por respuesta.
 - Catálogo: divide en 🎬 Películas / 📺 Series, 2-3 pósters representativos. Si >30, agrupa A-M / N-Z.
 - "Info de X": póster + sinopsis + audio (media_file_info) + calidad.
 
-# Políticas de contenido
-Consulta memory_recall antes de decisiones de calidad/audio.
-
 # Solo sin tools
 Responde directo ÚNICAMENTE si la pregunta es conceptual/educativa y ninguna tool aplica.`;
 
@@ -89,8 +86,15 @@ async function runOnce(args) {
 //   'restricted' — least-privilege MCP toolset (everyone else)
 // extraContext is appended to the system prompt (speaker identity, permissions).
 // sessionId = null starts a conversation; pass the returned sessionId to continue.
+// Only modes that actually have the memory tools get this instruction —
+// telling restricted users' runs to call a tool they don't have produces
+// confused/hallucinated replies.
+const MEMORY_POLICY =
+  '\n\n# Políticas de contenido\nConsulta memory_recall antes de decisiones de calidad/audio.';
+
 async function claudeChat(message, sessionId = null, mode = 'mediaops', extraContext = '') {
-  const system = extraContext ? `${SYSTEM_PROMPT}\n\n${extraContext}` : SYSTEM_PROMPT;
+  const base = mode === 'restricted' ? SYSTEM_PROMPT : SYSTEM_PROMPT + MEMORY_POLICY;
+  const system = extraContext ? `${base}\n\n${extraContext}` : base;
   const defaultModel = process.env.CLAUDE_MODEL || 'haiku';
   const adminModel = process.env.CLAUDE_MODEL_ADMIN || 'sonnet';
   const model = mode === 'full' ? adminModel : defaultModel;

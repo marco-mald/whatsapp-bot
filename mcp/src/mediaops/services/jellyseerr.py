@@ -140,6 +140,17 @@ async def user_requests(jellyseerr_user_id: int, take: int = 20) -> list[dict]:
     return out
 
 
+async def user_request_tmdb_ids(jellyseerr_user_id: int, take: int = 50) -> set[int]:
+    """tmdbIds of everything this user has requested — the ownership ground
+    truth for restricted torrent deletion."""
+    data = await _get("/api/v1/request", {"take": take, "sort": "added", "requestedBy": jellyseerr_user_id})
+    return {
+        (req.get("media") or {}).get("tmdbId")
+        for req in data.get("results", [])
+        if (req.get("media") or {}).get("tmdbId")
+    }
+
+
 async def manage_request(request_id: int, action: str) -> str:
     if action not in ("approve", "decline"):
         raise ValueError("action must be 'approve' or 'decline'")

@@ -23,7 +23,7 @@ The AI never talks to services directly: agent runs are locked to the MCP tools
 | Path | What | Runtime |
 |---|---|---|
 | `src/` | WhatsApp bot (Baileys), command router, webhooks, notifications, night optimizer | Node ≥18, pm2 (`marcobot`) |
-| `mcp/` | `mediaops` MCP server — 27 tools over the whole stack | Python ≥3.11, uv venv |
+| `mcp/` | `mediaops` MCP server — 35 tools over the whole stack | Python ≥3.11, uv venv |
 | `~/Downloads/media_manager` | Audio/video normalizer (separate repo, has its own README) | pm2 (`media-manager`) |
 
 ## Interaction model — natural language only
@@ -38,8 +38,8 @@ instead). The bot only reacts inside groups:
 
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
-| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 28 tools + unrestricted CLI |
-| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | Query + request media + add subtitles: `library_search`, `library_trending`, `media_add`, `downloads_status`, `media_queue`, `library_missing`, `system_status`, `subtitles_missing`, `subtitles_search` |
+| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 35 tools + unrestricted CLI |
+| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | The 16 family tools (see MCP server table below) — query, request media, manage their own downloads, subtitles. `downloads_delete` only on content they requested (verified via `my_requests`). |
 | Unknown numbers | — | — | Ignored entirely |
 | Any DM (including the admin's own) | — | — | Ignored entirely |
 
@@ -85,28 +85,43 @@ instead). The bot only reacts inside groups:
 
 ## MCP server (`mcp/`)
 
-27 tools in `mediaops`, grouped by module:
+35 tools in `mediaops`, grouped by module. 👪 = also in the restricted
+(family) profile; unmarked = admin/internal only:
 
 | Module | Tools |
 |---|---|
-| system | `system_status`, `system_logs`, `system_restart`, `system_resources` |
+| system | `system_status` 👪, `system_logs`, `system_restart`, `system_resources` |
 | diagnostics | `diagnostics_health`, `diagnostics_explain` |
-| requests | `library_search`, `media_add`, `requests_pending`, `requests_manage` |
-| downloads | `downloads_status`, `downloads_control` |
-| media | `media_queue`, `library_missing` |
-| subtitles | `subtitles_missing`, `subtitles_search` |
+| requests | `library_search` 👪, `library_trending` 👪, `library_catalog` 👪, `media_add` 👪, `media_file_info` 👪, `my_requests` 👪, `media_unmonitor`, `requests_pending`, `requests_manage` |
+| downloads | `downloads_status` 👪, `downloads_delete` 👪 (own content only), `downloads_control`, `downloads_clean`, `media_search_release` 👪 |
+| media | `media_queue` 👪, `library_missing` 👪 |
+| subtitles | `subtitles_missing` 👪, `subtitles_search` 👪 |
 | indexers | `indexers_health`, `indexers_test` |
-| optimization | `optimization_report`, `optimization_run`, `optimization_job`, `optimization_cancel` |
+| optimization | `optimization_report` 👪, `optimization_run`, `optimization_job`, `optimization_cancel` |
 | streaming | `streaming_sessions` |
-| analytics | `analytics_storage`, `analytics_library` |
+| analytics | `analytics_storage` 👪, `analytics_library` 👪 |
 | memory | `memory_recall`, `memory_save` |
 
 Notes:
 
 - Credentials are read at call time — ARR API keys from `~/arrstack/<svc>/config.xml`,
   Bazarr key from its `config.yaml`, the rest from this repo's `.env`. Nothing cached.
+- Requests **auto-approve**: `media_add` starts the download immediately, nothing
+  waits for approval (`requests_pending`/`requests_manage` exist for edge cases only).
+- `downloads_delete` in restricted mode: users may only remove torrents of content
+  they requested — the run is instructed to verify via `my_requests` first.
+- `memory_recall`/`memory_save` are the **global** server memory (policies like
+  "WEB-DL ≤8GB"), admin-only. Per-person memory is separate: the handler stores
+  `[[RECUERDA:...]]` facts per phone in `data/user-memory.json` and injects them
+  into that user's context.
 - `optimization_run` is strictly sequential (refuses if a job is active) so a
   batch request can never melt the host.
+- Token diet: non-admin runs replace Claude Code's default system prompt
+  (`--system-prompt`), disable built-in tools (`--tools ""`), and load the
+  `MEDIAOPS_PROFILE=restricted` server ([mediaops-restricted.mcp.json](mcp/mediaops-restricted.mcp.json))
+  which only registers the 16 family tools — ~10.5K context tokens per run vs
+  ~37.7K with the defaults. Keep `RESTRICTED_PROFILE_TOOLS` (server.py) and
+  `RESTRICTED_TOOLS` (claudeApi.js) in sync when changing the split.
 - Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):
   `full` (admin surfaces, `--dangerously-skip-permissions`), `restricted`
   (least-privilege tool allowlist), `mediaops` (all MCP tools, nothing else —

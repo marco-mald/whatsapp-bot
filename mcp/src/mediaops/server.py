@@ -100,17 +100,20 @@ def _dumps(data) -> str:
 @mcp.tool()
 @cached(30)
 async def system_status() -> str:
-    """Quick status of every service in the media stack: process state
-    (docker/systemd/pm2) plus HTTP health endpoint. Use this first for any
-    'how is the server' question."""
+    """Quick status of every service in the stack (radarr, sonarr, prowlarr,
+    bazarr, jellyseerr, qbittorrent, jellyfin, media-manager): process state +
+    HTTP health per service. Use FIRST for any 'how is the server / is X up'
+    question. Read-only. Does NOT cover disk space (analytics_storage) nor
+    download progress (downloads_status)."""
     return _dumps(await diagnostics.stack_status())
 
 
 @mcp.tool()
 async def system_logs(service: str, lines: int = 50) -> str:
-    """Recent log lines for one service (max 200). Valid services:
-    radarr, sonarr, prowlarr, bazarr, jellyseerr, qbittorrent, jellyfin,
-    media-manager."""
+    """Recent log lines for ONE service (default 50, max 200). service must be
+    exactly one of: radarr, sonarr, prowlarr, bazarr, jellyseerr, qbittorrent,
+    jellyfin, media-manager. Read-only. For a full 'why is X failing' diagnosis
+    prefer diagnostics_explain (it already includes log excerpts)."""
     svc = find_service(service)
     if not svc:
         return _UNKNOWN.format(service)
@@ -122,9 +125,11 @@ async def system_logs(service: str, lines: int = 50) -> str:
 
 @mcp.tool()
 async def system_restart(service: str) -> str:
-    """Restart one service (docker restart / pm2 restart / systemctl restart),
-    then re-check that it came back up. Only use when the user asked for a
-    restart or clearly approved one."""
+    """Restart ONE service, wait 5s, and return a post_restart health report.
+    Interrupts anything the service was doing — only call when the user
+    explicitly asked for or approved a restart; if playback could be affected,
+    check streaming_sessions first. Same service ids as system_logs. If
+    restarted=false, report the error — do not claim it was restarted."""
     svc = find_service(service)
     if not svc:
         return _UNKNOWN.format(service)
@@ -140,8 +145,9 @@ async def system_restart(service: str) -> str:
 
 @mcp.tool()
 async def system_resources() -> str:
-    """Host resources: disk usage per mount, memory, and load average.
-    Use for 'what is taking so much space' or performance questions."""
+    """Host resources: disk usage per mount, memory, load average. For 'is the
+    server slow / out of RAM' questions. For per-media-folder disk breakdown
+    (películas vs series) use analytics_storage instead."""
     return _dumps(await process.host_resources())
 
 
@@ -155,9 +161,10 @@ async def diagnostics_health() -> str:
 
 @mcp.tool()
 async def diagnostics_explain(service: str) -> str:
-    """Everything known about one service in a single call: process state,
-    restart count, HTTP health, ARR health issues, recent error lines from
-    logs, and the last log lines. Use to answer 'why is X failing'."""
+    """Everything known about ONE service in a single call: process state,
+    restart count, HTTP health, ARR health issues, recent error lines, last
+    log lines. THE tool for 'why is X failing'. Same service ids as
+    system_logs. Base conclusions only on what it returns."""
     svc = find_service(service)
     if not svc:
         return _UNKNOWN.format(service)
@@ -166,10 +173,11 @@ async def diagnostics_explain(service: str) -> str:
 
 @mcp.tool()
 async def library_trending(limit: int = 6) -> str:
-    """Currently trending/popular movies and series (from Jellyseerr's
-    discover feed), with each item's tmdbId and library status. Use this when
-    someone asks for a recommendation or "what's good to watch" instead of
-    naming a title — pick 1-3 from the results and offer to add them."""
+    """Trending/popular movies and series (Jellyseerr discover). Each item:
+    mediaType, tmdbId, title, year, status, overview, posterUrl. Use when
+    asked for recommendations / 'qué hay bueno' without a title: pick 1-3,
+    show with posters, offer to add. Only recommend titles present in this
+    result — never invent titles or posterUrls."""
     try:
         return _dumps(await jellyseerr.trending(limit))
     except Exception as err:
@@ -178,10 +186,14 @@ async def library_trending(limit: int = 6) -> str:
 
 @mcp.tool()
 async def library_search(query: str) -> str:
-    """Search movies/series by name. Returns each result's tmdbId and current
-    library status: available, downloading, pending_approval,
-    partially_available, or not_requested. Always use this first to answer
-    'do we have X?' or before adding anything."""
+    """Search movies/series by name (TMDB via Jellyseerr). Each result:
+    mediaType ('movie'|'tv'), tmdbId, title, year, status, overview,
+    posterUrl. status: available = watchable now; partially_available = some
+    seasons only; downloading = already requested, in progress;
+    not_requested = not in the library (offer media_add); pending_approval =
+    rare, requests auto-approve here. ALWAYS call this before media_add or
+    before answering 'do we have X'. Empty results = no such title in TMDB —
+    say so; never invent a title, year, or tmdbId."""
     try:
         return _dumps(await jellyseerr.search(query))
     except Exception as err:
@@ -190,11 +202,13 @@ async def library_search(query: str) -> str:
 
 @mcp.tool()
 async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | None = None, seasons: list[int] | None = None) -> str:
-    """Request a movie or series ('movie' or 'tv', tmdbId from library_search).
-    The request is auto-approved and downloading starts immediately, so confirm
-    intent before calling. For tv: only ONE season at a time (default: season 1).
-    Pass seasons=[N] to request a specific season. NEVER request all seasons at
-    once. Optionally attribute the request to a Jellyseerr user id."""
+    """Request a movie or ONE season of a series; it is AUTO-APPROVED and
+    starts downloading immediately — never tell the user it awaits approval.
+    media_type 'movie'|'tv'; tmdb_id MUST come from a library_search result in
+    this conversation, never from memory. tv: exactly one season per call
+    (seasons=[N]) — ask which season before calling. Always pass
+    jellyseerr_user_id so the request is attributed to the requester.
+    Confirm intent before calling; this kicks off a real download."""
     if media_type not in ("movie", "tv"):
         return "media_type must be 'movie' or 'tv'"
     if media_type == "tv" and seasons and len(seasons) > 1:
@@ -207,9 +221,12 @@ async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | Non
 
 @mcp.tool()
 async def media_file_info(tmdb_id: int) -> str:
-    """Get details about the downloaded file for a movie already in the library:
-    quality, resolution, audio languages, codec, file size. Use this when a user
-    asks about audio language, quality, or wants to know what version we have."""
+    """Details of the downloaded FILE of a MOVIE: quality, resolution, codecs,
+    audioLanguages, size_gb, monitored. tmdb_id from library_search. MOVIES
+    ONLY — it cannot inspect series episodes; if asked about a series' audio,
+    say you can't check that. MANDATORY before any claim about a file's audio
+    language or quality — never assume or guess. hasFile=false = the movie is
+    in the library list but the file hasn't downloaded yet."""
     try:
         return _dumps(await arr_media.movie_file_info(tmdb_id))
     except Exception as err:
@@ -218,9 +235,10 @@ async def media_file_info(tmdb_id: int) -> str:
 
 @mcp.tool()
 async def my_requests(jellyseerr_user_id: int) -> str:
-    """List all media requests made by a specific user (by their Jellyseerr ID).
-    Shows title, type, status (available/downloading/pending), and date.
-    Use when someone asks 'what did I request', 'my downloads', 'mis pedidos'."""
+    """All requests made by ONE user (jellyseerr_user_id comes in your context).
+    Shows title, type, status (available/downloading/pending) and date. Use for
+    'qué he pedido / mis pedidos' — and to VERIFY OWNERSHIP before deleting a
+    torrent with downloads_delete on behalf of a non-admin user."""
     try:
         return _dumps(await jellyseerr.user_requests(jellyseerr_user_id))
     except Exception as err:
@@ -229,9 +247,10 @@ async def my_requests(jellyseerr_user_id: int) -> str:
 
 @mcp.tool()
 async def media_unmonitor(tmdb_id: int) -> str:
-    """Stop Radarr from upgrading a movie (set monitored=false). Use this after
-    a user explicitly chooses a lower-quality or alternate-audio version so
-    Radarr's quality cutoff doesn't replace it automatically."""
+    """Set monitored=false on a movie so Radarr stops auto-upgrading it. Use
+    after someone deliberately chose a lower-quality or alternate-audio
+    version. tmdb_id from library_search. Deletes nothing; reversible from
+    Radarr's UI."""
     try:
         return _dumps(await arr_media.unmonitor_movie(tmdb_id))
     except Exception as err:
@@ -240,8 +259,9 @@ async def media_unmonitor(tmdb_id: int) -> str:
 
 @mcp.tool()
 async def requests_pending() -> str:
-    """List Jellyseerr requests waiting for approval (requestId, media,
-    who asked, when)."""
+    """Jellyseerr requests waiting for MANUAL approval. Normally EMPTY: this
+    stack auto-approves every request, so pending items are unusual states
+    worth mentioning to Marco. Returns requestId, media, who asked, when."""
     try:
         return _dumps(await jellyseerr.pending_requests())
     except Exception as err:
@@ -250,8 +270,9 @@ async def requests_pending() -> str:
 
 @mcp.tool()
 async def requests_manage(request_id: int, action: str) -> str:
-    """Approve or decline a pending Jellyseerr request.
-    action: 'approve' | 'decline'."""
+    """Approve or decline ONE pending request. request_id from
+    requests_pending; action 'approve'|'decline'. Rarely needed — requests
+    auto-approve in this stack."""
     try:
         return await jellyseerr.manage_request(request_id, action)
     except Exception as err:
@@ -261,8 +282,11 @@ async def requests_manage(request_id: int, action: str) -> str:
 @mcp.tool()
 @cached(30)
 async def downloads_status() -> str:
-    """Current qBittorrent torrents: state, progress %, speed, ETA, size.
-    Use for 'how are the downloads going'."""
+    """Current qBittorrent torrents: name, hash, state, progress %, speed,
+    ETA, size. For 'cómo van las descargas'. The hash here is what
+    downloads_control/downloads_delete need. Torrent names are raw release
+    filenames — match them to titles carefully; if unsure which torrent
+    corresponds to a title, say so instead of guessing."""
     try:
         return _dumps(await qbittorrent.torrents())
     except Exception as err:
@@ -271,8 +295,8 @@ async def downloads_status() -> str:
 
 @mcp.tool()
 async def downloads_control(action: str, torrent_hash: str = "all") -> str:
-    """Pause or resume torrents. action: 'pause' | 'resume';
-    torrent_hash: a hash from downloads_status, or 'all'."""
+    """Pause or resume torrents. action 'pause'|'resume'; torrent_hash from a
+    downloads_status result, or 'all'. Deletes nothing."""
     try:
         return await qbittorrent.control(action, torrent_hash)
     except Exception as err:
@@ -281,8 +305,9 @@ async def downloads_control(action: str, torrent_hash: str = "all") -> str:
 
 @mcp.tool()
 async def downloads_clean() -> str:
-    """Remove all completed torrents from qBittorrent (keeps downloaded files).
-    Use when asked to clean up, remove finished torrents, or free the queue."""
+    """Remove ALL completed torrents from qBittorrent. Downloaded files are
+    KEPT — the movies/series stay watchable; this only clears the torrent
+    list and stops seeding. For 'limpia los torrents terminados'."""
     try:
         return _dumps(await qbittorrent.delete_completed(delete_files=False))
     except Exception as err:
@@ -290,11 +315,42 @@ async def downloads_clean() -> str:
 
 
 @mcp.tool()
-async def downloads_delete(hashes: list[str]) -> str:
-    """Remove specific torrents by hash from qBittorrent (keeps downloaded files).
-    Use when the user wants to cancel/remove specific stalled or unwanted torrents.
-    Get hashes from downloads_status first."""
+async def downloads_delete(hashes: list[str], jellyseerr_user_id: int | None = None) -> str:
+    """Remove SPECIFIC torrents by hash (downloaded files are KEPT). hashes
+    ONLY from a downloads_status result in this conversation. Always pass the
+    speaker's jellyseerr_user_id (it's in your context): in restricted mode
+    ownership is ENFORCED IN CODE — hashes not matching that user's own
+    active requests come back in 'refused' and are NOT deleted (tell them
+    only Marco can remove those). Typical dead-download flow: downloads_status
+    → downloads_delete → media_search_release."""
     try:
+        if os.environ.get("MEDIAOPS_PROFILE") == "restricted":
+            if not jellyseerr_user_id:
+                return _dumps({
+                    "deleted": 0,
+                    "error": "jellyseerr_user_id is required to verify torrent ownership",
+                })
+            owned_ids, by_hash = await asyncio.gather(
+                jellyseerr.user_request_tmdb_ids(jellyseerr_user_id),
+                arr_media.queue_tmdb_by_hash(),
+            )
+            allowed, refused = [], []
+            for h in hashes:
+                info = by_hash.get(h.lower())
+                if info and info["tmdbId"] in owned_ids:
+                    allowed.append(h)
+                else:
+                    refused.append({
+                        "hash": h,
+                        "title": (info or {}).get("title"),
+                        "reason": "not requested by this user (or not verifiable) — only Marco can remove it",
+                    })
+            result = {"refused": refused}
+            if allowed:
+                result.update(await qbittorrent.delete_torrents(allowed, delete_files=False))
+            else:
+                result["deleted"] = 0
+            return _dumps(result)
         return _dumps(await qbittorrent.delete_torrents(hashes, delete_files=False))
     except Exception as err:
         return f"downloads_delete failed: {err}"
@@ -302,9 +358,11 @@ async def downloads_delete(hashes: list[str]) -> str:
 
 @mcp.tool()
 async def media_search_release(tmdb_id: int) -> str:
-    """Trigger Radarr to search for a new release of a movie (automatic search).
-    Use after removing a stalled/dead torrent so Radarr finds an alternative
-    release with more seeders. Get tmdbId from library_search."""
+    """Tell Radarr to search for another release of a movie. tmdb_id from
+    library_search. Use after removing a stalled torrent, or when hunting a
+    different quality/audio version. The search is ASYNC: say 'search
+    started, it will download if something is found' — never promise results
+    or invent what was found."""
     try:
         return _dumps(await arr_media.search_movie(tmdb_id))
     except Exception as err:
@@ -313,9 +371,10 @@ async def media_search_release(tmdb_id: int) -> str:
 
 @mcp.tool()
 async def media_queue() -> str:
-    """Radarr+Sonarr import queues: what is downloading/importing right now
-    and, crucially, per-item errors (stuck imports, failed downloads). The
-    first place to look for 'why didn't X arrive'."""
+    """Radarr+Sonarr import queues: what is downloading/importing right now,
+    with per-item errors (stuck imports, failed downloads). First stop for
+    'por qué no ha llegado X'. Complements downloads_status: this is the ARR
+    import view, that is the raw torrent view."""
     try:
         return _dumps(await arr_media.import_queues())
     except Exception as err:
@@ -324,8 +383,9 @@ async def media_queue() -> str:
 
 @mcp.tool()
 async def library_missing(limit: int = 15) -> str:
-    """Monitored but missing media: movies (Radarr) and aired episodes
-    (Sonarr) that haven't been downloaded yet."""
+    """Monitored but not yet downloaded: movies (Radarr) and aired episodes
+    (Sonarr). These are wanted and download automatically when a valid
+    release appears — being listed here is NOT an error by itself."""
     try:
         return _dumps(await arr_media.missing(limit))
     except Exception as err:
@@ -334,8 +394,10 @@ async def library_missing(limit: int = 15) -> str:
 
 @mcp.tool()
 async def subtitles_missing(limit: int = 20) -> str:
-    """Movies and episodes with missing subtitles (Bazarr), including which
-    languages are missing and the ids needed for subtitles_search."""
+    """Items missing subtitles per Bazarr, with the missing languages AND the
+    exact ids that subtitles_search needs (radarrId for movies,
+    sonarrEpisodeId for episodes). Always call this first — those ids cannot
+    be guessed and are NOT tmdbIds."""
     try:
         return _dumps(await bazarr.wanted(limit))
     except Exception as err:
@@ -344,9 +406,11 @@ async def subtitles_missing(limit: int = 20) -> str:
 
 @mcp.tool()
 async def subtitles_search(media_type: str, item_id: int) -> str:
-    """Trigger a subtitle search for one item. media_type: 'movie' (item_id =
-    radarrId from subtitles_missing) or 'episode' (item_id = sonarrEpisodeId).
-    Bazarr downloads the best subtitle automatically if found."""
+    """Trigger ONE subtitle search in Bazarr. media_type 'movie' (item_id =
+    radarrId) or 'episode' (item_id = sonarrEpisodeId); ids ONLY from
+    subtitles_missing — never a tmdbId. Bazarr downloads the best match by
+    itself, may take minutes, and can find nothing: say 'búsqueda iniciada',
+    never promise or claim the subtitle was found."""
     try:
         if media_type == "movie":
             return await bazarr.search_movie(item_id)
@@ -379,11 +443,12 @@ async def indexers_test() -> str:
 
 @mcp.tool()
 async def optimization_report(rescan: bool = False) -> str:
-    """Normalization state of the library (Media Manager): counts by status,
-    files pending normalization (needs-fix = default track, no-aac = audio,
-    needs-video = full H.264 re-encode taking 30-90 min), files with errors,
-    plus current CPU and active job count. rescan=True re-analyzes every file
-    (slow); otherwise uses the last scan."""
+    """Normalization backlog (Media Manager): counts by status, pending files
+    each with the file_id that optimization_run needs, files with errors,
+    current CPU and active job count. Statuses: needs-fix = wrong default
+    audio track (fast), no-aac = audio re-encode (minutes), needs-video =
+    full H.264 re-encode (30-90 min). rescan=True re-analyzes every file
+    (slow) — default uses the last scan."""
     try:
         return _dumps(await mediamanager.report(rescan))
     except Exception as err:
@@ -425,8 +490,9 @@ async def optimization_cancel(job_id: str) -> str:
 
 @mcp.tool()
 async def streaming_sessions() -> str:
-    """Who is watching Jellyfin right now: user, device, title, and whether
-    it's direct play or transcoding. Also check before heavy operations."""
+    """Who is watching Jellyfin RIGHT NOW: user, device, title, direct play vs
+    transcoding. Check before heavy operations (restarts, re-encodes) so you
+    don't interrupt someone. Empty = nobody is watching."""
     try:
         return _dumps(await analytics.jellyfin_sessions())
     except Exception as err:
@@ -435,8 +501,9 @@ async def streaming_sessions() -> str:
 
 @mcp.tool()
 async def analytics_storage() -> str:
-    """Disk usage: filesystems (including the media mount /mnt/ADATA) and
-    size per media folder. Use for 'what is taking so much space'."""
+    """Disk usage: filesystems (media mount /mnt/ADATA) plus size per media
+    folder (películas, series, torrents). For 'cuánto espacio queda / qué
+    ocupa más'. Read-only; report only the numbers it returns."""
     try:
         return _dumps(await analytics.storage())
     except Exception as err:
@@ -445,8 +512,9 @@ async def analytics_storage() -> str:
 
 @mcp.tool()
 async def analytics_library() -> str:
-    """Library totals: movies (owned/downloaded), series with episode
-    completeness, and total library size on disk."""
+    """Library TOTALS: movie count, series with episode completeness, size on
+    disk. For 'cuántas películas tenemos'. For the actual list of titles use
+    library_catalog instead."""
     try:
         return _dumps(await analytics.library_summary())
     except Exception as err:
@@ -456,9 +524,11 @@ async def analytics_library() -> str:
 @mcp.tool()
 @cached(60)
 async def library_catalog() -> str:
-    """Full list of all movies and series currently available in the library
-    (only titles that have files downloaded). Use when someone asks 'what do
-    we have', 'show me the catalog', 'list all movies', etc."""
+    """Full list of movies and series with files actually downloaded (i.e.
+    watchable now). For 'qué tenemos / muéstrame el catálogo'. The output is
+    large: summarize by groups (🎬/📺, or A-M / N-Z), don't dump every title.
+    A title absent here can still exist in TMDB — check library_search before
+    saying it doesn't exist at all."""
     try:
         return _dumps(await analytics.library_catalog())
     except Exception as err:
@@ -467,8 +537,10 @@ async def library_catalog() -> str:
 
 @mcp.tool()
 async def memory_recall() -> str:
-    """Saved preferences and standing decisions (e.g. 'Latino audio preferred',
-    'nothing over 8GB'). Check this before media or quality decisions."""
+    """GLOBAL server preferences and standing decisions (e.g. 'audio latino
+    preferido', 'nada mayor a 8GB'). Check before media/quality decisions.
+    This is the server-wide memory — per-person facts arrive in your context,
+    not here."""
     try:
         return _dumps(memory.recall())
     except Exception as err:
@@ -477,8 +549,9 @@ async def memory_recall() -> str:
 
 @mcp.tool()
 async def memory_save(note: str) -> str:
-    """Persist a preference or standing decision for future sessions. Save
-    only durable facts ('prefers X'), not one-off events."""
+    """Persist a GLOBAL server preference or standing decision for future
+    sessions. Only durable policies ('prefer X', 'never Y'), never one-off
+    events or per-person facts."""
     try:
         return memory.save(note)
     except Exception as err:

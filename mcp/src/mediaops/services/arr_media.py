@@ -70,6 +70,41 @@ async def import_queues() -> list[dict]:
     return radarr + sonarr
 
 
+async def queue_tmdb_by_hash() -> dict[str, dict]:
+    """Map torrent hash (lowercased ARR downloadId) → {tmdbId, title, app} for
+    every item currently in the Radarr/Sonarr download queues. Used to verify
+    torrent ownership (hash → media → who requested it in Jellyseerr)."""
+
+    async def _radarr() -> dict[str, dict]:
+        queue, movies = await asyncio.gather(
+            _get("radarr", "/queue", {"pageSize": 50}), _get("radarr", "/movie")
+        )
+        by_id = {m["id"]: m for m in movies}
+        out = {}
+        for r in queue.get("records", []):
+            h = (r.get("downloadId") or "").lower()
+            m = by_id.get(r.get("movieId"))
+            if h and m and m.get("tmdbId"):
+                out[h] = {"tmdbId": m["tmdbId"], "title": m.get("title"), "app": "radarr"}
+        return out
+
+    async def _sonarr() -> dict[str, dict]:
+        queue, series = await asyncio.gather(
+            _get("sonarr", "/queue", {"pageSize": 50}), _get("sonarr", "/series")
+        )
+        by_id = {s["id"]: s for s in series}
+        out = {}
+        for r in queue.get("records", []):
+            h = (r.get("downloadId") or "").lower()
+            s = by_id.get(r.get("seriesId"))
+            if h and s and s.get("tmdbId"):
+                out[h] = {"tmdbId": s["tmdbId"], "title": s.get("title"), "app": "sonarr"}
+        return out
+
+    radarr, sonarr = await asyncio.gather(_radarr(), _sonarr())
+    return {**radarr, **sonarr}
+
+
 async def _put(app: str, path: str, body: dict):
     async with httpx.AsyncClient() as client:
         res = await client.put(
