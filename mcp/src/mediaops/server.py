@@ -510,7 +510,9 @@ async def optimization_report(rescan: bool = False) -> str:
     current CPU and active job count. Statuses: needs-fix = wrong default
     audio track (fast), no-aac = audio re-encode (minutes), needs-video =
     full H.264 re-encode (30-90 min). rescan=True re-analyzes every file
-    (slow) — default uses the last scan."""
+    (slow) — default uses the last scan. NEVER use these counts to judge
+    whether a job you started earlier worked: a finished job is checked ONLY
+    via optimization_job(job_id) — its log ends in OK: or ERROR:."""
     try:
         return _dumps(await mediamanager.report(rescan))
     except Exception as err:
@@ -523,7 +525,11 @@ async def optimization_run(file_id: str) -> str:
     needed + AAC 2.0 audio). Strictly sequential: refuses if another job is
     already running — never try to start several at once. needs-video jobs
     take 30-90 min: start it, tell the user it's running, and let them ask
-    later; do NOT wait for completion. Returns a job_id for optimization_job."""
+    later; do NOT wait for completion. Returns a job_id for optimization_job.
+    ALWAYS quote the job_id verbatim in your visible reply — a later message
+    can only check the job if the id survived in the conversation. You have
+    NO scheduler and NO way to chain jobs: never claim you will run the next
+    one automatically; the user must ask again when this one finishes."""
     try:
         return _dumps(await mediamanager.normalize(file_id))
     except Exception as err:
