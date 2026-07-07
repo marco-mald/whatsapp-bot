@@ -24,6 +24,13 @@ const MAX_POSTERS = 4;
 // the model never picks whose memory it writes to. Stripped from the reply.
 const MEMORY_TOKEN = /\[\[RECUERDA:([^\]]+)\]\]/g;
 
+// The bot has no scheduler and no state between messages, but the model
+// occasionally claims otherwise (incident 2026-07-06: "programé una revisión
+// en ~20 min para ir encadenando"). The prompt now forbids this, but prompts
+// are not reliable enforcement — catch it deterministically as a backstop
+// and replace the whole reply with an honest one instead of shipping the lie.
+const FALSE_PROMISE_RE = /program[eé]|agend[eé]|te aviso (en|cuando)|encaden|automáticamente (en|dentro)|revisión automática|cuando termine te (notif|aviso)/i;
+
 // Natural-language-only router with least-privilege access. Groups only —
 // DMs are ignored entirely (unreliable delivery, and a common source of
 // confusion when someone means to address the group but taps the bot's
@@ -202,7 +209,12 @@ async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, m
     }
 
     const withPosters = reply.replace(TIMEOUT_TOKEN, '').replace(MEMORY_TOKEN, '');
-    const visible = withPosters.replace(POSTER_TOKEN, '').trim();
+    let visible = withPosters.replace(POSTER_TOKEN, '').trim();
+
+    if (FALSE_PROMISE_RE.test(visible)) {
+      console.warn(`[NL] Bloqueada promesa falsa de scheduling de ${senderPhone}: "${visible.slice(0, 200)}"`);
+      visible = 'Ya arranqué lo que pediste. No tengo forma de avisarte solo cuando termine — pregúntame en un rato y reviso el estado real.';
+    }
 
     const out = visible.length > 59000 ? visible.slice(0, 59000) + '\n\n_[truncado]_' : visible;
     if (out) {

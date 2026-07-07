@@ -38,7 +38,7 @@ instead). The bot only reacts inside groups:
 
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
-| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | Everything: all 35 tools + unrestricted CLI |
+| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | All 35 mediaops tools, stronger model (`CLAUDE_MODEL_ADMIN`) — but no raw Claude Code builtins (Bash/Write/Edit/Cron/Task/WebFetch). Decided 2026-07-06: unrestricted shell/cron access triggered by a WhatsApp message was an unaudited blast radius, and having real scheduling tools around is what made the model hallucinate "programé una revisión en 20 min" credible. |
 | Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | The 16 family tools (see MCP server table below) — query, request media, manage their own downloads, subtitles. `downloads_delete` only on content they requested (verified via `my_requests`). |
 | Unknown numbers | — | — | Ignored entirely |
 | Any DM (including the admin's own) | — | — | Ignored entirely |
@@ -139,9 +139,16 @@ Notes:
   ~37.7K with the defaults. Keep `RESTRICTED_PROFILE_TOOLS` (server.py) and
   `RESTRICTED_TOOLS` (claudeApi.js) in sync when changing the split.
 - Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):
-  `full` (admin surfaces, `--dangerously-skip-permissions`), `restricted`
-  (least-privilege tool allowlist), `mediaops` (all MCP tools, nothing else —
-  used by the automatic failure diagnosis).
+  `full` (admin surface, stronger model, still MCP-locked — no CC builtins),
+  `restricted` (least-privilege tool allowlist), `mediaops` (all MCP tools,
+  nothing else — used by the automatic failure diagnosis). All three run
+  with `--strict-mcp-config` + `--tools ""`: no mode ever gets Claude Code's
+  own Bash/Write/Edit/Cron/Task/WebFetch — only the mediaops MCP tools.
+- Deterministic backstop in [src/handler.js](src/handler.js)
+  (`FALSE_PROMISE_RE`): the bot has no scheduler and no state between
+  messages; if a reply still claims otherwise ("programé...", "te aviso
+  cuando...") it's replaced with an honest message before sending, regardless
+  of what the prompt says.
 
 ## Setup
 

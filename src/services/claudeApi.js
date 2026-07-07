@@ -97,39 +97,37 @@ const MEMORY_POLICY =
   '\n\n# Políticas de contenido\nConsulta memory_recall antes de decisiones de calidad/audio.';
 
 // Calls the local `claude` CLI in print mode. Modes:
-//   'full'       — unrestricted (admin surface: Debug group)
+//   'full'       — admin surface (Debug group): stronger model, still MCP-locked
 //   'mediaops'   — all mediaops MCP tools, nothing else (internal: auto-diagnosis)
 //   'restricted' — least-privilege MCP toolset (everyone else)
 // extraContext is appended to the system prompt (speaker identity, permissions,
 // rolling conversation history). Every run is fresh — continuity comes from
 // the finite history the handler injects, not from CLI --resume sessions.
+//
+// No mode gets Claude Code's own builtin tools (Bash/Write/Edit/Cron/Task/
+// WebFetch/...) — decided 2026-07-06 after 'full' mode's unrestricted access
+// let the model reference real scheduling tools (CronCreate/ScheduleWakeup)
+// it had no business touching from a WhatsApp message, which is exactly what
+// produced "programé una revisión en ~20 min" (no such job ever existed).
+// Admin gets a stronger model and the complete 35-tool mediaops surface —
+// full control of the media stack — but never raw shell/filesystem/cron on
+// the host triggered by a chat message.
 async function claudeChat(message, mode = 'mediaops', extraContext = '') {
   const base = mode === 'restricted' ? SYSTEM_PROMPT : SYSTEM_PROMPT + MEMORY_POLICY;
   const system = extraContext ? `${base}\n\n${extraContext}` : base;
   const defaultModel = process.env.CLAUDE_MODEL || 'haiku';
   const adminModel = process.env.CLAUDE_MODEL_ADMIN || 'sonnet';
   const model = mode === 'full' ? adminModel : defaultModel;
-  const args = ['-p', '--output-format', 'json', '--model', model];
+  const args = ['-p', '--output-format', 'json', '--model', model,
+    '--system-prompt', system, '--tools', '', '--strict-mcp-config'];
 
-  if (mode === 'full') {
-    // Admin keeps the full Claude Code environment (built-in tools + its own
-    // system prompt, ours appended) — capability over token savings here.
-    args.push('--mcp-config', MCP_CONFIG, '--append-system-prompt', system,
-      '--dangerously-skip-permissions');
+  if (mode === 'restricted') {
+    args.push('--mcp-config', MCP_CONFIG_RESTRICTED,
+      // = form: --allowedTools is variadic and would swallow the prompt argument
+      `--allowedTools=${RESTRICTED_TOOLS}`);
   } else {
-    // Token diet for non-admin runs (measured 2026-07-06, "hola" en restricted):
-    //   default CC prompt + builtins + 35 tools  → ~37.7K tokens de contexto
-    //   --system-prompt (replace) + --tools ""   → ~14.3K
-    //   + perfil MCP de 16 tools                 → ~8K
-    // Claude solo ve nuestro prompt y las tools mediaops que puede usar.
-    args.push('--system-prompt', system, '--tools', '', '--strict-mcp-config');
-    if (mode === 'restricted') {
-      args.push('--mcp-config', MCP_CONFIG_RESTRICTED,
-        // = form: --allowedTools is variadic and would swallow the prompt argument
-        `--allowedTools=${RESTRICTED_TOOLS}`);
-    } else {
-      args.push('--mcp-config', MCP_CONFIG, '--allowedTools=mcp__mediaops');
-    }
+    // 'full' and 'mediaops' both get the complete 35-tool server.
+    args.push('--mcp-config', MCP_CONFIG, '--allowedTools=mcp__mediaops');
   }
 
   args.push(message);
