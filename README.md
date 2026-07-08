@@ -23,7 +23,7 @@ The AI never talks to services directly: agent runs are locked to the MCP tools
 | Path | What | Runtime |
 |---|---|---|
 | `src/` | WhatsApp bot (Baileys), command router, webhooks, notifications, night optimizer | Node ≥18, pm2 (`marcobot`) |
-| `mcp/` | `mediaops` MCP server — 35 tools over the whole stack | Python ≥3.11, uv venv |
+| `mcp/` | `mediaops` MCP server — 32 tools over the whole stack | Python ≥3.11, uv venv |
 | `~/Downloads/media_manager` | Audio/video normalizer (separate repo, has its own README) | pm2 (`media-manager`) |
 
 ## Interaction model — natural language only
@@ -38,8 +38,8 @@ instead). The bot only reacts inside groups:
 
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
-| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | All 35 mediaops tools, stronger model (`CLAUDE_MODEL_ADMIN`) — but no raw Claude Code builtins (Bash/Write/Edit/Cron/Task/WebFetch). Decided 2026-07-06: unrestricted shell/cron access triggered by a WhatsApp message was an unaudited blast radius, and having real scheduling tools around is what made the model hallucinate "programé una revisión en 20 min" credible. |
-| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | The 16 family tools (see MCP server table below) — query, request media, manage their own downloads, subtitles. `downloads_delete` only on content they requested (verified via `my_requests`). |
+| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | All 32 mediaops tools, stronger model (`CLAUDE_MODEL_ADMIN`) — but no raw Claude Code builtins (Bash/Write/Edit/Cron/Task/WebFetch). Decided 2026-07-06: unrestricted shell/cron access triggered by a WhatsApp message was an unaudited blast radius, and having real scheduling tools around is what made the model hallucinate "programé una revisión en 20 min" credible. |
+| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | The 17 family tools (see MCP server table below) — query, request media, manage their own downloads, subtitles. `downloads_delete` and `downloads_control` only on content they requested (enforced in code). |
 | Unknown numbers | — | — | Ignored entirely |
 | Any DM (including the admin's own) | — | — | Ignored entirely |
 
@@ -107,19 +107,19 @@ instead). The bot only reacts inside groups:
 
 ## MCP server (`mcp/`)
 
-35 tools in `mediaops`, grouped by module. 👪 = also in the restricted
+32 tools in `mediaops`, grouped by module. 👪 = also in the restricted
 (family) profile; unmarked = admin/internal only:
 
 | Module | Tools |
 |---|---|
 | system | `system_status` 👪, `system_logs`, `system_restart`, `system_resources` |
 | diagnostics | `diagnostics_health`, `diagnostics_explain` |
-| requests | `library_search` 👪, `library_trending` 👪, `library_catalog` 👪, `media_add` 👪, `media_file_info` 👪, `my_requests` 👪, `media_unmonitor`, `requests_pending`, `requests_manage` |
-| downloads | `downloads_status` 👪, `downloads_delete` 👪 (own content only), `downloads_control`, `downloads_clean`, `media_search_release` 👪 |
+| requests | `library_search` 👪, `library_trending` 👪, `library_catalog` 👪, `media_add` 👪, `media_file_info` 👪 (movies + series), `my_requests` 👪 |
+| downloads | `downloads_status` 👪, `downloads_delete` 👪 (own content only), `downloads_control` 👪 (own content only), `downloads_clean`, `media_search_release` 👪 |
 | media | `media_queue` 👪, `library_missing` 👪 |
 | subtitles | `subtitles_missing` 👪, `subtitles_search` 👪 |
 | indexers | `indexers_health`, `indexers_test` |
-| optimization | `optimization_report` 👪, `optimization_run`, `optimization_job`, `optimization_cancel` |
+| optimization | `optimization_report`, `optimization_run`, `optimization_job`, `optimization_cancel` |
 | streaming | `streaming_sessions` |
 | analytics | `analytics_storage` 👪, `analytics_library` 👪 |
 | memory | `memory_recall`, `memory_save` |
@@ -128,10 +128,9 @@ Notes:
 
 - Credentials are read at call time — ARR API keys from `~/arrstack/<svc>/config.xml`,
   Bazarr key from its `config.yaml`, the rest from this repo's `.env`. Nothing cached.
-- Requests **auto-approve**: `media_add` starts the download immediately, nothing
-  waits for approval (`requests_pending`/`requests_manage` exist for edge cases only).
-- `downloads_delete` in restricted mode: users may only remove torrents of content
-  they requested — the run is instructed to verify via `my_requests` first.
+- Requests **auto-approve**: `media_add` starts the download immediately, nothing waits for approval.
+- `downloads_delete` and `downloads_control` in restricted mode: ownership enforced in code — users may only act on torrents of content they requested (verified via `queue_tmdb_by_hash` + `user_request_tmdb_ids`).
+- `media_file_info` auto-detects movie vs series: queries Radarr and Sonarr in parallel, returns whichever has the file. Series returns aggregate codec/audio/subtitle info across all episode files.
 - `memory_recall`/`memory_save` are the **global** server memory (policies like
   "WEB-DL ≤8GB"), admin-only. Per-person memory is separate: the handler stores
   `[[RECUERDA:...]]` facts per phone in `data/user-memory.json` and injects them
@@ -141,7 +140,7 @@ Notes:
 - Token diet: non-admin runs replace Claude Code's default system prompt
   (`--system-prompt`), disable built-in tools (`--tools ""`), and load the
   `MEDIAOPS_PROFILE=restricted` server ([mediaops-restricted.mcp.json](mcp/mediaops-restricted.mcp.json))
-  which only registers the 16 family tools — ~10.5K context tokens per run vs
+  which only registers the 17 family tools — ~10.5K context tokens per run vs
   ~37.7K with the defaults. Keep `RESTRICTED_PROFILE_TOOLS` (server.py) and
   `RESTRICTED_TOOLS` (claudeApi.js) in sync when changing the split.
 - Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):

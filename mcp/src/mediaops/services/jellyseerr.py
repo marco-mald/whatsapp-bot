@@ -109,21 +109,6 @@ async def request_media(media_type: str, tmdb_id: int, jellyseerr_user_id: int |
     }
 
 
-async def pending_requests(take: int = 20) -> list[dict]:
-    data = await _get("/api/v1/request", {"filter": "pending", "take": take, "sort": "added"})
-    out = []
-    for req in data.get("results", []):
-        media = req.get("media") or {}
-        out.append({
-            "requestId": req.get("id"),
-            "mediaType": media.get("mediaType"),
-            "tmdbId": media.get("tmdbId"),
-            "requestedBy": (req.get("requestedBy") or {}).get("displayName"),
-            "createdAt": req.get("createdAt"),
-        })
-    return out
-
-
 async def user_requests(jellyseerr_user_id: int, take: int = 20) -> list[dict]:
     """Get all requests made by a specific user."""
     data = await _get("/api/v1/request", {"take": take, "sort": "added", "requestedBy": jellyseerr_user_id})
@@ -151,8 +136,3 @@ async def user_request_tmdb_ids(jellyseerr_user_id: int, take: int = 50) -> set[
     }
 
 
-async def manage_request(request_id: int, action: str) -> str:
-    if action not in ("approve", "decline"):
-        raise ValueError("action must be 'approve' or 'decline'")
-    await _post(f"/api/v1/request/{request_id}/{action}")
-    return f"request {request_id} {action}d"

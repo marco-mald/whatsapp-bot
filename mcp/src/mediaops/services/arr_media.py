@@ -105,18 +105,6 @@ async def queue_tmdb_by_hash() -> dict[str, dict]:
     return {**radarr, **sonarr}
 
 
-async def _put(app: str, path: str, body: dict):
-    async with httpx.AsyncClient() as client:
-        res = await client.put(
-            f"{APPS[app]}{path}",
-            headers={"X-Api-Key": _key(app)},
-            json=body,
-            timeout=15.0,
-        )
-        res.raise_for_status()
-        return res.json()
-
-
 async def movie_file_info(tmdb_id: int) -> dict:
     """Get details about the downloaded file for a movie: quality, languages,
     audio tracks, size, etc. from Radarr."""
@@ -161,16 +149,47 @@ async def movie_file_info(tmdb_id: int) -> dict:
     }
 
 
-async def unmonitor_movie(tmdb_id: int) -> dict:
-    """Find a movie by tmdbId in Radarr and set monitored=false so Radarr
-    stops upgrading it (e.g. when user chose a specific quality/audio)."""
-    movies = await _get("radarr", "/movie")
-    match = next((m for m in movies if m.get("tmdbId") == tmdb_id), None)
+async def series_file_info(tmdb_id: int) -> dict:
+    """Aggregate file info for a TV series from Sonarr: episode file count,
+    total size, and distinct codecs/audio languages across all episode files."""
+    series_list = await _get("sonarr", "/series")
+    match = next((s for s in series_list if s.get("tmdbId") == tmdb_id), None)
     if not match:
-        return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
-    match["monitored"] = False
-    await _put("radarr", f"/movie/{match['id']}", match)
-    return {"title": match.get("title"), "tmdbId": tmdb_id, "monitored": False}
+        return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
+    series_id = match["id"]
+    episode_files = await _get("sonarr", "/episodefile", {"seriesId": series_id})
+    if not episode_files:
+        return {"title": match.get("title"), "tmdbId": tmdb_id, "mediaType": "series", "hasFile": False}
+    total_size = 0
+    audio_codecs: set[str] = set()
+    audio_languages: set[str] = set()
+    video_codecs: set[str] = set()
+    subtitle_langs: set[str] = set()
+    for ef in episode_files:
+        total_size += ef.get("size", 0)
+        mi = ef.get("mediaInfo") or {}
+        if mi.get("audioCodec"):
+            audio_codecs.add(mi["audioCodec"])
+        if mi.get("videoCodec"):
+            video_codecs.add(mi["videoCodec"])
+        for lang in (mi.get("audioLanguages") or "").split("/"):
+            if lang.strip():
+                audio_languages.add(lang.strip())
+        for lang in (mi.get("subtitles") or "").split("/"):
+            if lang.strip():
+                subtitle_langs.add(lang.strip())
+    return {
+        "title": match.get("title"),
+        "tmdbId": tmdb_id,
+        "mediaType": "series",
+        "hasFile": True,
+        "episodesWithFile": len(episode_files),
+        "size_gb": round(total_size / 1073741824, 2),
+        "videoCodecs": sorted(video_codecs),
+        "audioCodecs": sorted(audio_codecs),
+        "audioLanguages": sorted(audio_languages),
+        "subtitles": sorted(subtitle_langs) if subtitle_langs else ["ninguno integrado"],
+    }
 
 
 async def _post(app: str, path: str, body: dict | None = None):

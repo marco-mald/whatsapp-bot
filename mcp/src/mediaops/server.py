@@ -125,12 +125,13 @@ RESTRICTED_PROFILE_TOOLS = {
     "my_requests",
     "downloads_status",
     "downloads_delete",
+    "downloads_control",
     "media_search_release",
     "media_queue",
     "library_missing",
     "system_status",
     "analytics_storage",
-    "optimization_report",
+    "analytics_library",
     "subtitles_missing",
     "subtitles_search",
 }
@@ -281,15 +282,23 @@ async def media_add(media_type: str, tmdb_id: int, jellyseerr_user_id: int | Non
 
 @mcp.tool()
 async def media_file_info(tmdb_id: int) -> str:
-    """Details of the downloaded FILE of a MOVIE: quality, resolution, codecs,
-    audioLanguages, subtitles (embedded), size_gb, monitored. tmdb_id from
-    library_search. MOVIES
-    ONLY — it cannot inspect series episodes; if asked about a series' audio,
-    say you can't check that. MANDATORY before any claim about a file's audio
-    language or quality — never assume or guess. hasFile=false = the movie is
-    in the library list but the file hasn't downloaded yet."""
+    """Details of the downloaded file(s) for a movie or series — auto-detects
+    which. Movie: quality, resolution, codecs, audioLanguages, subtitles,
+    size_gb, monitored. Series: episodesWithFile count, total size_gb, distinct
+    videoCodecs, audioCodecs, audioLanguages, subtitle languages across all
+    episode files. tmdb_id from library_search. MANDATORY before any claim
+    about audio language or quality — never assume or guess.
+    hasFile=false = in the library but no file downloaded yet."""
     try:
-        return _dumps(await arr_media.movie_file_info(tmdb_id))
+        movie, series = await asyncio.gather(
+            arr_media.movie_file_info(tmdb_id),
+            arr_media.series_file_info(tmdb_id),
+        )
+        if "error" not in movie:
+            return _dumps(movie)
+        if "error" not in series:
+            return _dumps(series)
+        return _dumps(movie)  # both errored — return movie error
     except Exception as err:
         return f"media_file_info failed: {err}"
 
@@ -307,40 +316,6 @@ async def my_requests(jellyseerr_user_id: int) -> str:
 
 
 @mcp.tool()
-async def media_unmonitor(tmdb_id: int) -> str:
-    """Set monitored=false on a movie so Radarr stops auto-upgrading it. Use
-    after someone deliberately chose a lower-quality or alternate-audio
-    version. tmdb_id from library_search. Deletes nothing; reversible from
-    Radarr's UI."""
-    try:
-        return _dumps(await arr_media.unmonitor_movie(tmdb_id))
-    except Exception as err:
-        return f"media_unmonitor failed: {err}"
-
-
-@mcp.tool()
-async def requests_pending() -> str:
-    """Jellyseerr requests waiting for MANUAL approval. Normally EMPTY: this
-    stack auto-approves every request, so pending items are unusual states
-    worth mentioning to Marco. Returns requestId, media, who asked, when."""
-    try:
-        return _dumps(await jellyseerr.pending_requests())
-    except Exception as err:
-        return f"requests_pending failed: {err}"
-
-
-@mcp.tool()
-async def requests_manage(request_id: int, action: str) -> str:
-    """Approve or decline ONE pending request. request_id from
-    requests_pending; action 'approve'|'decline'. Rarely needed — requests
-    auto-approve in this stack."""
-    try:
-        return await jellyseerr.manage_request(request_id, action)
-    except Exception as err:
-        return f"requests_manage failed: {err}"
-
-
-@mcp.tool()
 @cached(30)
 async def downloads_status() -> str:
     """Current qBittorrent torrents: name, hash, state, progress %, speed,
@@ -355,10 +330,34 @@ async def downloads_status() -> str:
 
 
 @mcp.tool()
-async def downloads_control(action: str, torrent_hash: str = "all") -> str:
+async def downloads_control(action: str, torrent_hash: str = "all", jellyseerr_user_id: int | None = None) -> str:
     """Pause or resume torrents. action 'pause'|'resume'; torrent_hash from a
-    downloads_status result, or 'all'. Deletes nothing."""
+    downloads_status result, or 'all' (admin only — refused in restricted mode).
+    Always pass the speaker's jellyseerr_user_id: in restricted mode ownership
+    is ENFORCED IN CODE — hashes not matching that user's own active requests
+    are refused and NOT acted upon (tell them only Marco can control those).
+    Deletes nothing."""
     try:
+        if os.environ.get("MEDIAOPS_PROFILE") == "restricted":
+            if not jellyseerr_user_id:
+                return _dumps({
+                    "error": "jellyseerr_user_id is required to verify torrent ownership",
+                })
+            if torrent_hash == "all":
+                return _dumps({
+                    "error": "pausing/resuming all torrents is admin-only — only Marco can do that",
+                })
+            owned_ids, by_hash = await asyncio.gather(
+                jellyseerr.user_request_tmdb_ids(jellyseerr_user_id),
+                arr_media.queue_tmdb_by_hash(),
+            )
+            info = by_hash.get(torrent_hash.lower())
+            if not info or info["tmdbId"] not in owned_ids:
+                return _dumps({
+                    "refused": torrent_hash,
+                    "title": (info or {}).get("title"),
+                    "reason": "not requested by this user (or not verifiable) — only Marco can control it",
+                })
         return await qbittorrent.control(action, torrent_hash)
     except Exception as err:
         return f"downloads_control failed: {err}"

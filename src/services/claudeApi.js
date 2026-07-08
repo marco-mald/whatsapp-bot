@@ -5,7 +5,7 @@ const path = require('path');
 const execFileAsync = promisify(execFile);
 
 const MCP_CONFIG = path.join(__dirname, '..', '..', 'mcp', 'mediaops.mcp.json');
-// Same server with MEDIAOPS_PROFILE=restricted: only registers the 16
+// Same server with MEDIAOPS_PROFILE=restricted: only registers the 17
 // family-facing tools, so restricted runs don't pay context for the rest.
 const MCP_CONFIG_RESTRICTED = path.join(__dirname, '..', '..', 'mcp', 'mediaops-restricted.mcp.json');
 
@@ -38,8 +38,9 @@ NO tienes scheduler, timers ni procesos entre mensajes: lo ÚNICO que ocurre es 
 Cuando des detalles de UN item específico (una descarga, una película de la
 biblioteca, "info de X"), incluye SIEMPRE que la tool los provea: peso en GB
 (size_gb), idiomas de audio (audioLanguages) y subtítulos (subtitles) — para
-películas eso sale de media_file_info; para torrents, downloads_status trae
-size_gb. Si la tool no trae el dato, di "no disponible" — no lo inventes.
+películas y series eso sale de media_file_info (auto-detecta el tipo); para
+torrents, downloads_status trae size_gb. Si la tool no trae el dato, di "no
+disponible" — no lo inventes.
 
 # Pósters
 Si un resultado incluye posterUrl, agrega: [[POSTER:<posterUrl>|<Título (año)>]]
@@ -60,12 +61,13 @@ const RESTRICTED_TOOLS = [
   'my_requests',
   'downloads_status',
   'downloads_delete',
+  'downloads_control',
   'media_search_release',
   'media_queue',
   'library_missing',
   'system_status',
   'analytics_storage',
-  'optimization_report',
+  'analytics_library',
   'subtitles_missing',
   'subtitles_search',
 ].map((t) => `mcp__mediaops__${t}`).join(',');
