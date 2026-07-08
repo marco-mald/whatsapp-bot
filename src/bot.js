@@ -113,6 +113,8 @@ async function connectToWhatsApp() {
       const now = Date.now();
       reconTimestamps.push(now);
       while (reconTimestamps.length && reconTimestamps[0] < now - RECON_WINDOW_MS) reconTimestamps.shift();
+      // === fires exactly once (at the 8th close) — not on 9th, 10th, etc.
+      // Intentional: one alert per storm, no repeat noise while still thrashing.
       if (reconTimestamps.length === RECON_STORM_THRESHOLD) {
         const adminId = adminChatId();
         if (adminId) {

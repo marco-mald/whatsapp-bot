@@ -59,9 +59,10 @@ instead). The bot only reacts inside groups:
   numbers are dropped silently.
 - Rate limiting ([src/ratelimit.js](src/ratelimit.js)): one run at a time per
   user (single-flight — a second message while one is in flight gets a "wait"
-  reply), global cap `MAX_CONCURRENT_RUNS` (default 2, protects CPU/streaming),
-  and a generous soft daily cap `DAILY_MSG_LIMIT` (default 40). The admin is
-  exempt from the global and daily caps.
+  reply), global cap `MAX_CONCURRENT_RUNS` (default 4, protects CPU/streaming),
+  per-group soft daily cap `GROUP_DAILY_LIMIT` (default 100), and a generous
+  soft daily cap `DAILY_MSG_LIMIT` (default 40) per user. The admin is exempt
+  from the global and daily caps.
 - Off-topic moderation ([src/moderation.js](src/moderation.js)): the bot is for
   media, not banter. The LLM escalates a user who keeps messing around — warn →
   roast → append a `[[TIMEOUT:15]]` control token. The handler enforces the ban
@@ -98,6 +99,11 @@ instead). The bot only reacts inside groups:
   Failed files are remembered and skipped (`data/optimizer-state.json`).
   Morning summary 🔧 to the group.
 - **Sunday 11:00**: trending suggestions with posters (`TIMEZONE`).
+- **Daily 09:00**: download activity summary sent to all `TARGET_CHAT_ID` groups (via `sendDailySummary` in [src/scheduler.js](src/scheduler.js)).
+- **Reconnection resilience** ([src/bot.js](src/bot.js)):
+  - *Exponential backoff with jitter* on `connection === 'close'`: 3s → ~5s → ~10s → … → 60s cap. Resets to 3s only after 30s of stable `open` state — eliminates the 3-second hammering seen during a real network failure that can trigger WA rate-limiting.
+  - *Zombie socket watchdog*: every 60s checks whether `lastActivity` (updated on every `connection.update` and `messages.upsert`) is more than 5 min old while the socket still reports `open`. If so, forces `sock.end()` to trigger normal reconnection. Catches TCP-ESTAB sessions that receive no traffic and never emit `close` (seen 2026-07-06).
+  - *Reconnection storm alert*: if ≥8 closes happen within 5 min, sends a `⚠️` message to `ADMIN_CHAT_ID` (Debug group) via `notify()`. Fires once per storm at the 8th disconnect — subsequent disconnects in the same storm don't re-alert.
 
 ## MCP server (`mcp/`)
 
@@ -167,7 +173,10 @@ cd mcp && uv venv && uv pip install -e .
 technical notifications + fallback), `TIMEZONE`, `ADMIN_NUMBER`,
 `ADMIN_GROUP_NAME` (default `Debug`), `ADMIN_CHAT_IDS` (optional extra admin
 chat JIDs), `WEBHOOK_PORT/TOKEN`, `QUIET_HOURS`, `JELLYFIN_URL/API_KEY`,
-`OPTIMIZE_WINDOW`.
+`OPTIMIZE_WINDOW`, `CLAUDE_MODEL` (default model for non-admin runs),
+`CLAUDE_MODEL_ADMIN` (stronger model for the admin surface), `OPTIMIZE_CONCURRENCY`
+(night optimizer parallel jobs, default 2), `GROUP_DAILY_LIMIT` (soft daily cap
+per group, default 100), `MAX_CONCURRENT_RUNS` (global concurrency cap, default 4).
 
 One-time host config:
 
@@ -203,3 +212,4 @@ Streaming-first, low disk (decided 2026-07-03):
 - `notify-queue.json` — notifications held during quiet hours
 - `optimizer-state.json` — night worker state (current job, failed files, night stats)
 - `preferences.json` — agent memory (standing decisions, preferences)
+- `inflight.json` — messages being processed when the bot restarts; `retryPending()` replays them on the next `connection === 'open'` (max 10 min age, after that they are discarded)

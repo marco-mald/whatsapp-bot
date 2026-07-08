@@ -43,8 +43,10 @@ FULL_SYSTEM="$SYSTEM_PROMPT
 
 $CONTEXT"
 
-# Build CLI args
-CLI_ARGS=(-p --output-format json --model "$MODEL" --append-system-prompt "$FULL_SYSTEM")
+# Build CLI args — must match production: --system-prompt (replace, not append) and
+# ENABLE_TOOL_SEARCH=false so MCP tools load eagerly (same as claudeApi.js runOnce).
+CLI_ARGS=(-p --output-format json --model "$MODEL" --system-prompt "$FULL_SYSTEM")
+export ENABLE_TOOL_SEARCH=false
 
 if [[ "$DRY" == false ]] && [[ -f "$MCP_CONFIG" ]]; then
   CLI_ARGS+=(--mcp-config "$MCP_CONFIG" --strict-mcp-config "--allowedTools=$ALLOWED_TOOLS")
