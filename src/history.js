@@ -6,26 +6,39 @@ const path = require('path');
 // 2 minutes or 2 hours, but the window is hard-capped so it never grows into
 // an infinite log and never drags the whole past into every prompt.
 //   { "<chatJid>:<phone>": [{ "role": "user"|"bot", "text": "...", "ts": 0 }] }
+//
+// State is kept in _store (a Map in memory) so concurrent runs don't clobber
+// each other via non-atomic load/modify/save on disk. Disk is written async
+// after every mutation — a crash can lose the last entry but never corrupts
+// the file (writeFile is atomic at the OS level on Linux).
 
 const FILE = path.join(__dirname, '..', 'data', 'chat-history.json');
 const MAX_MESSAGES = 6; // 3 exchanges: enough for "descarga los subtítulos", small enough to not haunt unrelated commands
 const MAX_LEN = 400; // chars kept per message
 
-function load() {
+// In-memory store: loaded once at require time, written async after each change.
+let _store;
+
+function _load() {
   try {
-    return JSON.parse(fs.readFileSync(FILE, 'utf8'));
+    return new Map(Object.entries(JSON.parse(fs.readFileSync(FILE, 'utf8'))));
   } catch {
-    return {};
+    return new Map();
   }
 }
 
-function persist(store) {
-  try {
-    fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(store, null, 1));
-  } catch (err) {
-    console.error('[History] No pude guardar chat-history.json:', err.message);
-  }
+function _getStore() {
+  if (!_store) _store = _load();
+  return _store;
+}
+
+function _persist() {
+  const store = _getStore();
+  const dir = path.dirname(FILE);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFile(FILE, JSON.stringify(Object.fromEntries(store), null, 1), (err) => {
+    if (err) console.error('[History] No pude guardar chat-history.json:', err.message);
+  });
 }
 
 // tools: optional array of { name, key, value } extracted from tool_use blocks,
@@ -34,24 +47,24 @@ function persist(store) {
 function record(key, role, text, tools) {
   const clean = (text || '').trim();
   if (!clean) return;
-  const store = load();
-  const list = store[key] || [];
+  const store = _getStore();
+  const list = store.get(key) || [];
   const entry = { role, text: clean.slice(0, MAX_LEN), ts: Date.now() };
   if (tools && tools.length) entry.tools = tools;
   list.push(entry);
-  store[key] = list.slice(-MAX_MESSAGES); // rolling window, overwrites oldest
-  persist(store);
+  store.set(key, list.slice(-MAX_MESSAGES)); // rolling window, overwrites oldest
+  _persist();
 }
 
 function getHistory(key) {
-  return load()[key] || [];
+  return _getStore().get(key) || [];
 }
 
 function clear(key) {
-  const store = load();
-  if (!store[key]) return false;
-  delete store[key];
-  persist(store);
+  const store = _getStore();
+  if (!store.has(key)) return false;
+  store.delete(key);
+  _persist();
   return true;
 }
 
