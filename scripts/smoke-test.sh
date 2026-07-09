@@ -25,7 +25,7 @@ for arg in "$@"; do
   [[ "$arg" == "--dry" ]] && DRY=true
 done
 
-MODEL="${CLAUDE_MODEL:-haiku}"
+MODEL="${CLAUDE_MODEL:-sonnet}"
 
 ALLOWED_TOOLS="mcp__mediaops__downloads_status,mcp__mediaops__system_status,mcp__mediaops__library_search,mcp__mediaops__library_trending,mcp__mediaops__media_add,mcp__mediaops__media_queue,mcp__mediaops__library_missing,mcp__mediaops__subtitles_missing,mcp__mediaops__subtitles_search"
 

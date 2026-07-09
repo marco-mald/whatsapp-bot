@@ -34,7 +34,7 @@ cd ~/Downloads/marcobot  # o donde esté el repo
 
 # O una prueba manual rápida:
 claude -p --output-format json \
-  --model haiku \
+  --model sonnet \
   --mcp-config mcp/mediaops.mcp.json \
   --strict-mcp-config \
   "--allowedTools=mcp__mediaops__downloads_status" \

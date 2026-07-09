@@ -31,7 +31,7 @@ NO tienes scheduler, timers ni procesos entre mensajes: lo ÚNICO que ocurre es 
 - Usa el nombre de la persona, no "bro" genérico. Sin "bro/wey" para mujeres.
 - NO termines con "¿necesitas algo más?" — conciso y ya.
 - PROHIBIDO pedir permisos. Ya tienes acceso a tus tools. Si no existe una, di "no tengo herramienta para eso".
-- Si una tool falla, reintenta o informa — NUNCA pidas autorización al usuario.
+- Si una tool devuelve un mensaje que contiene "failed:", reintenta exactamente una vez con los mismos parámetros. Si falla de nuevo, di solo "⚙️ tuve un problema técnico, intenta de nuevo." — nunca inventes la información.
 - NUNCA menciones tecnicismos internos (MCP, ToolSearch, tools, servidores, sesiones). Si algo técnico falla di solo "⚙️ tuve un problema técnico, intenta de nuevo".
 
 # Detalles de items
@@ -47,6 +47,9 @@ Si un resultado incluye posterUrl, agrega: [[POSTER:<posterUrl>|<Título (año)>
 URL real, nunca inventada. No menciones el tag. Máx 4 por respuesta.
 - Catálogo: divide en 🎬 Películas / 📺 Series, 2-3 pósters representativos. Si >30, agrupa A-M / N-Z.
 - "Info de X": póster + sinopsis + audio (media_file_info) + calidad.
+
+# Historial de conversación
+Si recibes un bloque [HISTORIAL], úsalo SOLO si el mensaje actual claramente lo continúa (referencias como "ese", "la segunda", "cancélalo", "agrégala"). Comandos autocontenidos o de otro tema lo ignoran por completo. Si es genuinamente ambiguo, pregunta — no adivines.
 
 # Solo sin tools
 Responde directo ÚNICAMENTE si la pregunta es conceptual/educativa y ninguna tool aplica.`;
@@ -78,8 +81,8 @@ async function runOnce(args) {
     maxBuffer: 10 * 1024 * 1024,
     cwd: process.env.HOME,
     // ENABLE_TOOL_SEARCH=false: CLI ≥2.1 defers MCP tools behind a ToolSearch
-    // step by default; haiku can't handle the load-then-call dance and tells
-    // users "el servidor mediaops sigue reconectando". Our 30-ish tools fit
+    // step by default, which adds an extra round-trip and tells users
+    // "el servidor mediaops sigue reconectando". Our 30-ish tools fit
     // fine in context, so load them eagerly.
     env: { ...process.env, ENABLE_TOOL_SEARCH: 'false' },
     // Explicit closed stdin: without this the CLI waits ~3s checking for
@@ -87,7 +90,12 @@ async function runOnce(args) {
     stdio: ['ignore', 'pipe', 'pipe'],
   });
 
-  const data = JSON.parse(stdout.trim());
+  let data;
+  try {
+    data = JSON.parse(stdout.trim());
+  } catch (e) {
+    throw new Error(`CLI output parse failed: ${e.message} — stdout: ${stdout.slice(0, 500)}`);
+  }
   if (data.is_error) throw new Error(data.result || 'Error desconocido del CLI');
   return { reply: data.result };
 }
@@ -111,16 +119,19 @@ const MEMORY_POLICY =
 // let the model reference real scheduling tools (CronCreate/ScheduleWakeup)
 // it had no business touching from a WhatsApp message, which is exactly what
 // produced "programé una revisión en ~20 min" (no such job ever existed).
-// Admin gets a stronger model and the complete 35-tool mediaops surface —
+// Admin gets a stronger model and the complete 32-tool mediaops surface —
 // full control of the media stack — but never raw shell/filesystem/cron on
 // the host triggered by a chat message.
 async function claudeChat(message, mode = 'mediaops', extraContext = '') {
   const base = mode === 'restricted' ? SYSTEM_PROMPT : SYSTEM_PROMPT + MEMORY_POLICY;
   const system = extraContext ? `${base}\n\n${extraContext}` : base;
-  const defaultModel = process.env.CLAUDE_MODEL || 'haiku';
+  const defaultModel = process.env.CLAUDE_MODEL || 'sonnet';
   const adminModel = process.env.CLAUDE_MODEL_ADMIN || 'sonnet';
   const model = mode === 'full' ? adminModel : defaultModel;
+  const maxTokens = mode === 'full' ? (process.env.CLAUDE_MAX_TOKENS_ADMIN || '1500')
+    : (process.env.CLAUDE_MAX_TOKENS || '800');
   const args = ['-p', '--output-format', 'json', '--model', model,
+    '--max-tokens', maxTokens,
     '--system-prompt', system, '--tools', '', '--strict-mcp-config'];
 
   if (mode === 'restricted') {
@@ -137,19 +148,26 @@ async function claudeChat(message, mode = 'mediaops', extraContext = '') {
   try {
     return await runOnce(args);
   } catch (err) {
-    // Transient CLI/API hiccups happen occasionally; one silent retry before
-    // surfacing an error to the user. Log full stdout/stderr either way —
-    // err.message alone hides the actual cause.
+    // Parse failures are not transient — retrying the exact same call won't fix
+    // a bad stdout. Only retry process/network errors (no exit code = spawn
+    // failure; code 1 = CLI error; ETIMEDOUT = timeout).
+    const isTransient = !err.message.startsWith('CLI output parse failed') &&
+      (err.code == null || err.code === 1 || err.code === 'ETIMEDOUT' ||
+       err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER');
     console.error(
-      '[ClaudeApi] Primer intento falló, reintentando. code=%s stdout=%s stderr=%s',
-      err.code, (err.stdout || '').slice(0, 500), (err.stderr || '').slice(0, 500)
+      '[ClaudeApi] Primer intento falló%s. code=%s msg=%s',
+      isTransient ? ', reintentando' : ', no reintentable',
+      err.code, err.message.slice(0, 200)
     );
+    if (!isTransient) throw err;
+    // Brief backoff before retry — avoids hammering a rate-limited API.
+    await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
     try {
       return await runOnce(args);
     } catch (err2) {
       console.error(
-        '[ClaudeApi] Reintento también falló. code=%s stdout=%s stderr=%s',
-        err2.code, (err2.stdout || '').slice(0, 500), (err2.stderr || '').slice(0, 500)
+        '[ClaudeApi] Reintento también falló. code=%s msg=%s',
+        err2.code, err2.message.slice(0, 200)
       );
       throw err2;
     }

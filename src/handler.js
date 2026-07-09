@@ -144,12 +144,7 @@ function buildContext({ user, isAdminSender, mode, chatJid, senderPhone }) {
   const recent = history.getHistory(`${chatJid}:${senderPhone}`);
   if (recent.length) {
     const convo = recent.map((h) => `${h.role === 'bot' ? 'Tú' : name}: ${h.text}`).join('\n');
-    lines.push(
-      `Últimos mensajes con ${name} (pueden tener horas — NO asumas que siguen vigentes):\n${convo}\n` +
-        'Usa este historial SOLO si el mensaje actual claramente lo continúa (ej: "sí", "descarga los ' +
-        'subtítulos", "la segunda", "y en español?"). Si el mensaje actual es una petición autocontenida ' +
-        'o de otro tema, IGNORA el historial por completo. Si de verdad es ambiguo, pregunta — no adivines.'
-    );
+    lines.push(`[HISTORIAL con ${name}]:\n${convo}`);
   }
   lines.push(
     'Memoria: si aprendes un dato DURABLE del usuario (preferencia de audio/calidad, gustos, ' +
@@ -163,8 +158,8 @@ function buildContext({ user, isAdminSender, mode, chatJid, senderPhone }) {
         'Series: solo 1 temporada (seasons=[N]), pregunta cuál. ' +
         'Las solicitudes se auto-aprueban al instante — nunca digas que algo "quedó pendiente de aprobación". ' +
         'Sin tools de admin — si piden reinicios, borrar archivos o cambiar config, dile que eso lo hace Marco.\n' +
-        'Audio/calidad: SIEMPRE usa media_file_info antes de afirmar idioma o resolución (solo funciona ' +
-        'para películas; para series di que no puedes verificarlo). ' +
+        'Audio/calidad: SIEMPRE usa media_file_info antes de afirmar idioma o resolución — funciona ' +
+        'para películas y series (auto-detecta). Series devuelve codecs/audio agregados de todos los episodios. ' +
         'Si eligen versión inferior, avisa que Marco debe desactivar monitoreo.\n' +
         `Borrar torrents (downloads_delete): siempre con jellyseerr_user_id=${user?.jellyseerrId ?? 'null'} — ` +
         'la tool solo borra lo pedido por esa persona; lo que venga en "refused" NO se borró, explica que eso solo lo quita Marco.\n' +
