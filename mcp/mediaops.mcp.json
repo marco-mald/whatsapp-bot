@@ -1,8 +1,8 @@
 {
   "mcpServers": {
     "mediaops": {
-      "command": "/home/marko_mald/Downloads/marcobot/mcp/.venv/bin/python",
-      "args": ["-m", "mediaops.server"],
+      "type": "sse",
+      "url": "http://127.0.0.1:8765/sse",
       "alwaysLoad": true
     }
   }

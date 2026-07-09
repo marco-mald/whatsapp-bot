@@ -144,6 +144,11 @@ Notes:
   which only registers the 20 family tools — ~10.5K context tokens per run vs
   ~37.7K with the defaults. Keep `RESTRICTED_PROFILE_TOOLS` (server.py) and
   `RESTRICTED_TOOLS` (claudeApi.js) in sync when changing the split.
+- MCP servers run as **persistent pm2 processes** (`mediaops` on :8765,
+  `mediaops-restricted` on :8766) connected via SSE transport. This eliminates
+  the ~300–500ms Python cold start on every Claude CLI invocation and makes the
+  in-server TTL cache effective across back-to-back requests. The Claude CLI
+  connects to `http://127.0.0.1:876x/sse` instead of spawning a new subprocess.
 - Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):
   `full` (admin surface, stronger model, still MCP-locked — no CC builtins),
   `restricted` (least-privilege tool allowlist), `mediaops` (all MCP tools,
@@ -162,10 +167,16 @@ Notes:
 # Bot
 npm install
 cp .env.example .env   # fill in (see below)
-pm2 start src/bot.js --name marcobot   # scan QR on first run
 
-# MCP server
-cd mcp && uv venv && uv pip install -e .
+# MCP server (install once)
+cd mcp && uv venv && uv pip install -e . && cd ..
+
+# Start all processes (bot + both MCP server instances)
+pm2 start ecosystem.config.js   # first run: scan QR from marcobot logs
+
+# Verify MCP servers are up before testing the bot
+curl -s http://127.0.0.1:8765/sse   # should hang (SSE stream open) — Ctrl-C
+curl -s http://127.0.0.1:8766/sse   # restricted instance
 ```
 
 `.env` keys: `JELLYSEERR_URL/API_KEY`, `QBIT_URL/USER/PASS`, `TARGET_CHAT_ID`

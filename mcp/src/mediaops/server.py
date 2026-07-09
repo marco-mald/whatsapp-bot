@@ -709,7 +709,20 @@ async def media_remove(tmdb_id: int, delete_files: bool = False) -> str:
 
 
 def main() -> None:
-    mcp.run()
+    import argparse
+    parser = argparse.ArgumentParser(description="MediaOps MCP server")
+    parser.add_argument("--transport", choices=["stdio", "sse"], default="stdio",
+                        help="Transport to use (default: stdio)")
+    parser.add_argument("--port", type=int, default=None,
+                        help="Port for SSE transport (overrides FASTMCP_PORT)")
+    args, _ = parser.parse_known_args()
+
+    if args.port is not None:
+        os.environ["FASTMCP_PORT"] = str(args.port)
+    if args.transport == "sse":
+        os.environ.setdefault("FASTMCP_HOST", "127.0.0.1")
+
+    mcp.run(transport=args.transport)
 
 
 if __name__ == "__main__":
