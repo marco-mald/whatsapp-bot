@@ -138,12 +138,14 @@ async function sendDailySummary(sockRef) {
 async function runStalledFix(sockRef) {
   try {
     const { reply } = await claudeChat(
-      'Ejecuta fix_stalled_downloads.',
+      'Ejecuta fix_stalled_downloads. Responde ÚNICAMENTE con el JSON exacto que devuelva la tool, sin texto adicional.',
       'mediaops',
       'Sistema: tarea automática de mantenimiento.'
     );
-    // Only notify admin if something was actually fixed (fixed > 0)
-    if (reply && !/"fixed"\s*:\s*0/.test(reply)) {
+    // Only notify admin when something was actually fixed — require explicit "fixed": N > 0
+    // in the JSON response. Natural language replies (no JSON) are silently ignored.
+    const fixedMatch = reply && reply.match(/"fixed"\s*:\s*(\d+)/);
+    if (fixedMatch && parseInt(fixedMatch[1], 10) > 0) {
       const sock = sockRef.current;
       const jid = process.env.ADMIN_CHAT_ID;
       if (sock && jid) {
