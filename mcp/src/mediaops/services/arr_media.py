@@ -192,6 +192,106 @@ async def series_file_info(tmdb_id: int) -> dict:
     }
 
 
+async def recently_added(limit: int = 10, days: int = 30) -> dict:
+    """Movies and series with downloaded files added in the last N days."""
+    from datetime import datetime, timezone, timedelta
+    movies_raw, series_raw = await asyncio.gather(
+        _get("radarr", "/movie"),
+        _get("sonarr", "/series"),
+    )
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    def parse_dt(s):
+        try:
+            return datetime.fromisoformat(s.replace("Z", "+00:00"))
+        except Exception:
+            return datetime.min.replace(tzinfo=timezone.utc)
+
+    items = []
+    for m in movies_raw:
+        if not m.get("hasFile"):
+            continue
+        if parse_dt(m.get("dateAdded", "")) >= cutoff:
+            items.append({
+                "mediaType": "movie",
+                "title": m.get("title"),
+                "year": m.get("year"),
+                "tmdbId": m.get("tmdbId"),
+                "dateAdded": m.get("dateAdded", "")[:10],
+            })
+    for s in series_raw:
+        if not (s.get("statistics") or {}).get("episodeFileCount"):
+            continue
+        if parse_dt(s.get("added", "")) >= cutoff:
+            items.append({
+                "mediaType": "series",
+                "title": s.get("title"),
+                "year": s.get("year"),
+                "tmdbId": s.get("tmdbId"),
+                "dateAdded": s.get("added", "")[:10],
+            })
+
+    items.sort(key=lambda x: x["dateAdded"], reverse=True)
+    return {"recently_added": items[:limit], "total": len(items), "period_days": days}
+
+
+async def seasons_info(tmdb_id: int) -> dict:
+    """Season breakdown for a TV series: episodes total/downloaded/% per season."""
+    series_list = await _get("sonarr", "/series", {"tmdbId": tmdb_id})
+    match = next(iter(series_list), None)
+    if not match:
+        return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
+    seasons = []
+    for s in match.get("seasons", []):
+        if s.get("seasonNumber", 0) == 0:
+            continue  # skip specials
+        stats = s.get("statistics") or {}
+        seasons.append({
+            "season": s["seasonNumber"],
+            "monitored": s.get("monitored", False),
+            "episodes_total": stats.get("totalEpisodeCount", 0),
+            "episodes_downloaded": stats.get("episodeFileCount", 0),
+            "percent_complete": round(stats.get("percentOfEpisodes", 0.0), 1),
+        })
+    return {
+        "title": match.get("title"),
+        "tmdbId": tmdb_id,
+        "seasons": sorted(seasons, key=lambda x: x["season"]),
+    }
+
+
+async def search_series(tmdb_id: int) -> dict:
+    """Trigger an automatic search in Sonarr for a series by tmdbId."""
+    series_list = await _get("sonarr", "/series", {"tmdbId": tmdb_id})
+    match = next(iter(series_list), None)
+    if not match:
+        return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
+    await _post("sonarr", "/command", {"name": "SeriesSearch", "seriesId": match["id"]})
+    return {"title": match.get("title"), "tmdbId": tmdb_id, "status": "search_triggered"}
+
+
+async def remove_movie(tmdb_id: int, delete_files: bool = False) -> dict:
+    """Remove a movie from Radarr. Keeps file on disk by default."""
+    movies = await _get("radarr", "/movie", {"tmdbId": tmdb_id})
+    match = next(iter(movies), None)
+    if not match:
+        return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
+    async with httpx.AsyncClient() as client:
+        res = await client.delete(
+            f"{APPS['radarr']}/movie/{match['id']}",
+            headers={"X-Api-Key": _key("radarr")},
+            params={"deleteFiles": str(delete_files).lower(), "addImportExclusion": "false"},
+            timeout=15.0,
+        )
+        res.raise_for_status()
+    return {
+        "title": match.get("title"),
+        "tmdbId": tmdb_id,
+        "removed": True,
+        "files_deleted": delete_files,
+    }
+
+
 async def _post(app: str, path: str, body: dict | None = None):
     async with httpx.AsyncClient() as client:
         res = await client.post(

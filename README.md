@@ -38,8 +38,8 @@ instead). The bot only reacts inside groups:
 
 | Surface | Who | Mode | Capabilities |
 |---|---|---|---|
-| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | All 32 mediaops tools, stronger model (`CLAUDE_MODEL_ADMIN`) — but no raw Claude Code builtins (Bash/Write/Edit/Cron/Task/WebFetch). Decided 2026-07-06: unrestricted shell/cron access triggered by a WhatsApp message was an unaudited blast radius, and having real scheduling tools around is what made the model hallucinate "programé una revisión en 20 min" credible. |
-| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | The 17 family tools (see MCP server table below) — query, request media, manage their own downloads, subtitles. `downloads_delete` and `downloads_control` only on content they requested (enforced in code). |
+| Group named `Debug` (`ADMIN_GROUP_NAME`) | `ADMIN_NUMBER` only | `full` | All 36 mediaops tools, stronger model (`CLAUDE_MODEL_ADMIN`) — but no raw Claude Code builtins (Bash/Write/Edit/Cron/Task/WebFetch). Decided 2026-07-06: unrestricted shell/cron access triggered by a WhatsApp message was an unaudited blast radius, and having real scheduling tools around is what made the model hallucinate "programé una revisión en 20 min" credible. |
+| Any other group — only when the bot is **@mentioned** or its message is quoted | Registered users | `restricted` | The 20 family tools (see MCP server table below) — query, request media, manage their own downloads, subtitles, fix stalled. `downloads_delete` and `downloads_control` only on content they requested (enforced in code). |
 | Unknown numbers | — | — | Ignored entirely |
 | Any DM (including the admin's own) | — | — | Ignored entirely |
 
@@ -100,6 +100,7 @@ instead). The bot only reacts inside groups:
   Morning summary 🔧 to the group.
 - **Sunday 11:00**: trending suggestions with posters (`TIMEZONE`).
 - **Daily 09:00**: download activity summary sent to all `TARGET_CHAT_ID` groups (via `sendDailySummary` in [src/scheduler.js](src/scheduler.js)).
+- **Every 20 min**: `fix_stalled_downloads` runs silently via `runStalledFix`. If stalled torrents (state `stalledDL`/`error`, progress < 100%) are found, deletes them and triggers a new Radarr/Sonarr search. Notifies `ADMIN_CHAT_ID` only when something was actually fixed. Torrents at 100% progress are ignored (file already on disk).
 - **Reconnection resilience** ([src/bot.js](src/bot.js)):
   - *Exponential backoff with jitter* on `connection === 'close'`: 3s → ~5s → ~10s → … → 60s cap. Resets to 3s only after 30s of stable `open` state — eliminates the 3-second hammering seen during a real network failure that can trigger WA rate-limiting.
   - *Zombie socket watchdog*: every 60s checks whether `lastActivity` (updated on every `connection.update` and `messages.upsert`) is more than 5 min old while the socket still reports `open`. If so, forces `sock.end()` to trigger normal reconnection. Catches TCP-ESTAB sessions that receive no traffic and never emit `close` (seen 2026-07-06).
@@ -107,16 +108,16 @@ instead). The bot only reacts inside groups:
 
 ## MCP server (`mcp/`)
 
-32 tools in `mediaops`, grouped by module. 👪 = also in the restricted
+36 tools in `mediaops`, grouped by module. 👪 = also in the restricted
 (family) profile; unmarked = admin/internal only:
 
 | Module | Tools |
 |---|---|
 | system | `system_status` 👪, `system_logs`, `system_restart`, `system_resources` |
 | diagnostics | `diagnostics_health`, `diagnostics_explain` |
-| requests | `library_search` 👪, `library_trending` 👪, `library_catalog` 👪, `media_add` 👪, `media_file_info` 👪 (movies + series), `my_requests` 👪 |
-| downloads | `downloads_status` 👪, `downloads_delete` 👪 (own content only), `downloads_control` 👪 (own content only), `downloads_clean`, `media_search_release` 👪 |
-| media | `media_queue` 👪, `library_missing` 👪 |
+| requests | `library_search` 👪, `library_trending` 👪, `library_catalog` 👪, `recently_added` 👪, `media_add` 👪, `media_file_info` 👪 (movies + series), `seasons_info` 👪, `my_requests` 👪 |
+| downloads | `downloads_status` 👪, `downloads_delete` 👪 (own content only), `downloads_control` 👪 (own content only), `downloads_clean`, `media_search_release` 👪, `fix_stalled_downloads` 👪 |
+| media | `media_queue` 👪, `library_missing` 👪, `media_remove` (admin) |
 | subtitles | `subtitles_missing` 👪, `subtitles_search` 👪 |
 | indexers | `indexers_health`, `indexers_test` |
 | optimization | `optimization_report`, `optimization_run`, `optimization_job`, `optimization_cancel` |
@@ -140,7 +141,7 @@ Notes:
 - Token diet: non-admin runs replace Claude Code's default system prompt
   (`--system-prompt`), disable built-in tools (`--tools ""`), and load the
   `MEDIAOPS_PROFILE=restricted` server ([mediaops-restricted.mcp.json](mcp/mediaops-restricted.mcp.json))
-  which only registers the 17 family tools — ~10.5K context tokens per run vs
+  which only registers the 20 family tools — ~10.5K context tokens per run vs
   ~37.7K with the defaults. Keep `RESTRICTED_PROFILE_TOOLS` (server.py) and
   `RESTRICTED_TOOLS` (claudeApi.js) in sync when changing the split.
 - Claude modes in [src/services/claudeApi.js](src/services/claudeApi.js):

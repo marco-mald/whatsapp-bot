@@ -1,6 +1,7 @@
 const cron = require('node-cron');
 const axios = require('axios');
 const jellyseerr = require('./services/jellyseerr');
+const { claudeChat } = require('./services/claudeApi');
 const { targetChatIds } = require('./notifications');
 
 function mediaTypeLabel(mediaType) {
@@ -134,6 +135,26 @@ async function sendDailySummary(sockRef) {
   }
 }
 
+async function runStalledFix(sockRef) {
+  try {
+    const { reply } = await claudeChat(
+      'Ejecuta fix_stalled_downloads.',
+      'mediaops',
+      'Sistema: tarea automática de mantenimiento.'
+    );
+    // Only notify admin if something was actually fixed (fixed > 0)
+    if (reply && !/"fixed"\s*:\s*0/.test(reply)) {
+      const sock = sockRef.current;
+      const jid = process.env.ADMIN_CHAT_ID;
+      if (sock && jid) {
+        await sock.sendMessage(jid, { text: `🔧 *Auto-fix torrents:*\n${reply}` });
+      }
+    }
+  } catch (err) {
+    console.error('[Scheduler] stalledFix error:', err.message);
+  }
+}
+
 function setupScheduler(sockRef) {
   const timezone = process.env.TIMEZONE || 'America/Mexico_City';
 
@@ -159,7 +180,14 @@ function setupScheduler(sockRef) {
     { timezone }
   );
 
-  console.log(`[Scheduler] Notificaciones programadas: domingos 11:00am, diario 9:00am (${timezone})`);
+  // Every 20 minutes: fix stalled torrents silently; notifies admin only if something was fixed
+  cron.schedule('*/20 * * * *', () => {
+    runStalledFix(sockRef).catch((err) =>
+      console.error('[Scheduler] Error fatal en runStalledFix:', err)
+    );
+  }, { timezone });
+
+  console.log(`[Scheduler] Notificaciones programadas: domingos 11:00am, diario 9:00am, auto-fix cada 20min (${timezone})`);
 }
 
 module.exports = { setupScheduler, sendTrending };

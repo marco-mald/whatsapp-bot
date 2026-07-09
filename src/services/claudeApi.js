@@ -70,6 +70,9 @@ const RESTRICTED_TOOLS = [
   'analytics_library',
   'subtitles_missing',
   'subtitles_search',
+  'recently_added',
+  'seasons_info',
+  'fix_stalled_downloads',
 ].map((t) => `mcp__mediaops__${t}`).join(',');
 
 // Runs the Claude CLI and returns { reply, toolUses }.

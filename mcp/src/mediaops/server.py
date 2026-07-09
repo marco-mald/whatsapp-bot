@@ -134,6 +134,9 @@ RESTRICTED_PROFILE_TOOLS = {
     "analytics_library",
     "subtitles_missing",
     "subtitles_search",
+    "recently_added",
+    "seasons_info",
+    "fix_stalled_downloads",
 }
 
 if os.environ.get("MEDIAOPS_PROFILE") == "restricted":
@@ -623,6 +626,82 @@ async def memory_save(note: str) -> str:
         return memory.save(note)
     except Exception as err:
         return f"memory_save failed: {err}"
+
+
+@mcp.tool()
+async def recently_added(limit: int = 10, days: int = 30) -> str:
+    """Movies and series with files added to the library in the last N days
+    (default last 30 days), sorted newest first. Use for '¿qué hay de nuevo
+    esta semana/mes?' without loading the full catalog. Each item: mediaType,
+    title, year, tmdbId, dateAdded."""
+    try:
+        return _dumps(await arr_media.recently_added(limit, days))
+    except Exception as err:
+        return f"recently_added failed: {err}"
+
+
+@mcp.tool()
+async def seasons_info(tmdb_id: int) -> str:
+    """Season breakdown for a TV series in Sonarr: each season's total episode
+    count, how many are downloaded, and % complete. tmdb_id from library_search.
+    Call before media_add to show which seasons are already available so the
+    user can choose which one to request. season=0 (specials) is excluded."""
+    try:
+        return _dumps(await arr_media.seasons_info(tmdb_id))
+    except Exception as err:
+        return f"seasons_info failed: {err}"
+
+
+@mcp.tool()
+async def fix_stalled_downloads() -> str:
+    """Find stalled torrents (stalledDL/error state, progress < 100%), delete
+    them from qBittorrent, and trigger a new Radarr/Sonarr search — which picks
+    the best available release per quality profile automatically. Ignores
+    torrents at 100% progress (content already on disk, just seeding). Available
+    to all users. Returns what was fixed, or a message if nothing was stalled."""
+    try:
+        all_torrents, by_hash = await asyncio.gather(
+            qbittorrent.torrents(),
+            arr_media.queue_tmdb_by_hash(),
+        )
+        stalled = [
+            t for t in all_torrents
+            if t["state"] in ("stalledDL", "error") and t["progress"] < 100.0
+        ]
+        if not stalled:
+            return _dumps({"fixed": 0, "message": "No hay torrents estancados"})
+        fixed = []
+        for t in stalled:
+            info = by_hash.get(t["hash"].lower())
+            if not info:
+                continue
+            await qbittorrent.delete_torrents([t["hash"]], delete_files=False)
+            if info["app"] == "radarr":
+                search = await arr_media.search_movie(info["tmdbId"])
+            else:
+                search = await arr_media.search_series(info["tmdbId"])
+            fixed.append({
+                "title": info["title"],
+                "app": info["app"],
+                "state_was": t["state"],
+                "progress_was": t["progress"],
+                "search": search.get("status", "unknown"),
+            })
+        return _dumps({"fixed": len(fixed), "items": fixed})
+    except Exception as err:
+        return f"fix_stalled_downloads failed: {err}"
+
+
+@mcp.tool()
+async def media_remove(tmdb_id: int, delete_files: bool = False) -> str:
+    """Remove a movie from Radarr (stops monitoring it). Keeps the file on disk
+    by default (delete_files=False) — only pass True when the user explicitly
+    wants to free disk space and confirms it. tmdb_id from library_search.
+    Series removal is not yet implemented."""
+    try:
+        return _dumps(await arr_media.remove_movie(tmdb_id, delete_files))
+    except Exception as err:
+        return f"media_remove failed: {err}"
 
 
 def main() -> None:
