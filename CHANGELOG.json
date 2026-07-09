@@ -1,0 +1,4 @@
+{
+  "version": "1.1.0",
+  "announcement": "🤖 *MediaOps v1.1.0*\n\n*¿Qué hay de nuevo?*\n• 🔧 *Auto-fix de torrents* — cada 20 min el bot detecta y reinicia descargas atascadas automáticamente\n• 📅 *Contenido reciente* — pregunta "¿qué se agregó esta semana?" y te respondo directo\n• 📺 *Info de temporadas* — al pedir una serie te digo qué temporadas ya tienes\n• ⚡ *Más rápido* — el servidor de herramientas ya corre en segundo plano, sin arranque frío por mensaje\n• 🧠 *Mejor contexto* — recuerdo tmdbId y hashes entre mensajes del mismo hilo, menos búsquedas repetidas\n• 🐛 Varios fixes de estabilidad y logs mejorados"
+}

@@ -13,6 +13,7 @@ const { setupScheduler } = require('./scheduler');
 const { setupNotifications, notify, adminChatId } = require('./notifications');
 const { setupWebhooks } = require('./webhooks');
 const { setupOptimizer } = require('./optimizer');
+const { maybeAnnounce } = require('./announcer');
 
 const logger = pino({ level: 'silent' });
 let schedulerInitialized = false;
@@ -159,6 +160,7 @@ async function connectToWhatsApp() {
 
       registerBotIdentity(sock);
       resolveAdminGroup(sock).then(() => retryPending(sock)).catch(() => {});
+      maybeAnnounce(sock).catch((err) => console.error('[Announcer] Error:', err.message));
 
       if (!schedulerInitialized) {
         setupScheduler(sockRef);

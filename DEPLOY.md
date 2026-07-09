@@ -78,7 +78,13 @@ pm2 restart marcobot
 
 ## 6. Smoke test
 
-Manda un mensaje al bot desde WhatsApp (el grupo Debug o el que uses):
+Al arrancar el bot enviará automáticamente el anuncio de v1.1.0 a los grupos configurados en `TARGET_CHAT_ID`. Si no llega, revisa:
+
+```bash
+pm2 logs marcobot --lines 20 | grep Announcer
+```
+
+Luego manda un mensaje al bot desde WhatsApp (el grupo Debug o el que uses):
 
 > "estado del servidor"
 
