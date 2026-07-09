@@ -79,7 +79,7 @@ const RESTRICTED_TOOLS = [
 // Uses stream-json + --verbose to capture tool_use events in real time,
 // so callers can persist which tools ran (and with what key args) alongside
 // the bot's visible reply in the conversation history.
-function runOnce(args) {
+function runOnce(args, runId) {
   return new Promise((resolve, reject) => {
     const fullArgs = ['-p', '--verbose', '--output-format', 'stream-json', ...args];
     const proc = spawn('claude', fullArgs, {
@@ -88,7 +88,9 @@ function runOnce(args) {
       // step by default, which adds an extra round-trip and tells users
       // "el servidor mediaops sigue reconectando". Our 30-ish tools fit
       // fine in context, so load them eagerly.
-      env: { ...process.env, ENABLE_TOOL_SEARCH: 'false' },
+      // MEDIAOPS_RUN_ID is inherited by the MCP server subprocess the CLI
+      // spawns (stdio mode), letting us correlate Node logs with tool-calls.jsonl.
+      env: { ...process.env, ENABLE_TOOL_SEARCH: 'false', MEDIAOPS_RUN_ID: runId },
       stdio: ['ignore', 'pipe', 'pipe'],
     });
 
@@ -208,8 +210,12 @@ async function claudeChat(message, mode = 'mediaops', extraContext = '') {
 
   args.push(message);
 
+  // Unique ID for this invocation — logged by the handler and inherited as
+  // MEDIAOPS_RUN_ID by the MCP server, so a single grep correlates both logs.
+  const runId = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+
   try {
-    return await runOnce(args);
+    return { runId, ...await runOnce(args, runId) };
   } catch (err) {
     // Parse failures are not transient — retrying the exact same call won't fix
     // a bad stdout. Only retry process/network errors (no exit code = spawn
@@ -225,7 +231,7 @@ async function claudeChat(message, mode = 'mediaops', extraContext = '') {
     // Brief backoff before retry — avoids hammering a rate-limited API.
     await new Promise((r) => setTimeout(r, 1500 + Math.random() * 1000));
     try {
-      return await runOnce(args);
+      return { runId, ...await runOnce(args, runId) };
     } catch (err2) {
       console.error(
         '[ClaudeApi] Reintento también falló. code=%s msg=%s',

@@ -227,7 +227,7 @@ async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, m
     await sock.sendPresenceUpdate('composing', replyJid);
     const thinking = THINKING_REPLIES[Math.floor(Math.random() * THINKING_REPLIES.length)];
     await sock.sendMessage(replyJid, { text: thinking });
-    const { reply, toolUses } = await claudeChat(text, mode, context);
+    const { reply, toolUses, runId } = await claudeChat(text, mode, context);
 
     // Moderation: the LLM appends [[TIMEOUT:N]] to ban a persistent abuser.
     // Enforce the ban here, strip the token from what the user sees. Admin immune.
@@ -252,7 +252,7 @@ async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, m
     const out = visible.length > 59000 ? visible.slice(0, 59000) + '\n\n_[truncado]_' : visible;
     if (out) {
       const sent = await sock.sendMessage(replyJid, { text: out });
-      console.log(`[NL] Respuesta enviada (id ${sent?.key?.id || '?'}) a ${replyJid}`);
+      console.log(`[NL] Respuesta enviada (id ${sent?.key?.id || '?'}) a ${replyJid} [run:${runId}]`);
     } else {
       console.warn('[NL] Respuesta vacía del CLI — no se envió nada');
     }

@@ -70,14 +70,18 @@ def _log_call(tool: str, kwargs: dict, result, secs: float) -> None:
             or head.startswith("EXCEPTION")
             or '"error"' in head
         )
-        line = json.dumps({
+        entry: dict = {
             "ts": time.strftime("%Y-%m-%dT%H:%M:%S"),
             "tool": tool,
             "args": json.dumps(kwargs, ensure_ascii=False, default=str)[:150],
             "ok": ok,
             "secs": round(secs, 2),
             "result": head if not ok else head[:80],
-        }, ensure_ascii=False)
+        }
+        run_id = os.environ.get("MEDIAOPS_RUN_ID")
+        if run_id:
+            entry["run"] = run_id
+        line = json.dumps(entry, ensure_ascii=False)
         TOOL_LOG.parent.mkdir(exist_ok=True)
         if TOOL_LOG.exists() and TOOL_LOG.stat().st_size > 2_000_000:
             TOOL_LOG.rename(TOOL_LOG.with_suffix(".jsonl.1"))
