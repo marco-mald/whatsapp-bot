@@ -719,8 +719,10 @@ def main() -> None:
 
     if args.port is not None:
         os.environ["FASTMCP_PORT"] = str(args.port)
+        mcp.settings.port = args.port
     if args.transport == "sse":
         os.environ.setdefault("FASTMCP_HOST", "127.0.0.1")
+        mcp.settings.host = os.environ["FASTMCP_HOST"]
 
     mcp.run(transport=args.transport)
 
