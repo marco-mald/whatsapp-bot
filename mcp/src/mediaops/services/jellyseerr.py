@@ -136,3 +136,18 @@ async def user_request_tmdb_ids(jellyseerr_user_id: int, take: int = 50) -> set[
     }
 
 
+async def requester_by_tmdb(tmdb_id: int) -> dict | None:
+    """Return the Jellyseerr requester for a given tmdbId, or None if not found.
+    Result: {jellyseerrId, username} of the user who requested it."""
+    data = await _get("/api/v1/request", {"take": 5, "sort": "added", "mediaId": tmdb_id})
+    req = next(iter(data.get("results", [])), None)
+    if not req:
+        return None
+    requested_by = req.get("requestedBy") or {}
+    uid = requested_by.get("id")
+    username = requested_by.get("username") or requested_by.get("displayName")
+    if not uid:
+        return None
+    return {"jellyseerrId": uid, "username": username}
+
+

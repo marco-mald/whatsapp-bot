@@ -684,13 +684,18 @@ async def fix_stalled_downloads() -> str:
                 search = await arr_media.search_movie(info["tmdbId"])
             else:
                 search = await arr_media.search_series(info["tmdbId"])
-            fixed.append({
+            requester = await jellyseerr.requester_by_tmdb(info["tmdbId"])
+            item = {
                 "title": info["title"],
                 "app": info["app"],
+                "tmdbId": info["tmdbId"],
                 "state_was": t["state"],
                 "progress_was": t["progress"],
                 "search": search.get("status", "unknown"),
-            })
+            }
+            if requester:
+                item["requestedBy"] = requester
+            fixed.append(item)
         return _dumps({"fixed": len(fixed), "items": fixed})
     except Exception as err:
         return f"fix_stalled_downloads failed: {err}"

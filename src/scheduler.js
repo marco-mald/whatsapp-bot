@@ -2,7 +2,8 @@ const cron = require('node-cron');
 const axios = require('axios');
 const jellyseerr = require('./services/jellyseerr');
 const { claudeChat } = require('./services/claudeApi');
-const { targetChatIds } = require('./notifications');
+const { targetChatIds, adminChatId } = require('./notifications');
+const { findByJellyseerr } = require('./users');
 
 function mediaTypeLabel(mediaType) {
   return mediaType === 'movie' ? '🎬 Película' : '📺 Serie';
@@ -142,14 +143,48 @@ async function runStalledFix(sockRef) {
       'mediaops',
       'Sistema: tarea automática de mantenimiento.'
     );
-    // Only notify admin when something was actually fixed — require explicit "fixed": N > 0
-    // in the JSON response. Natural language replies (no JSON) are silently ignored.
+
+    // Only act when the JSON confirms fixed > 0
     const fixedMatch = reply && reply.match(/"fixed"\s*:\s*(\d+)/);
-    if (fixedMatch && parseInt(fixedMatch[1], 10) > 0) {
-      const sock = sockRef.current;
-      const jid = process.env.ADMIN_CHAT_ID;
-      if (sock && jid) {
-        await sock.sendMessage(jid, { text: `🔧 *Auto-fix torrents:*\n${reply}` });
+    if (!fixedMatch || parseInt(fixedMatch[1], 10) === 0) return;
+
+    const sock = sockRef.current;
+    if (!sock) return;
+
+    // Parse items to route each one to the requester's group
+    let items = [];
+    try {
+      const parsed = JSON.parse(reply);
+      items = parsed.items || [];
+    } catch { /* malformed JSON — fall back to admin-only */ }
+
+    if (!items.length) {
+      // No item detail available — just notify admin
+      const jid = adminChatId();
+      if (jid) await sock.sendMessage(jid, { text: `🔧 *Auto-fix torrents:*\n${reply}` });
+      return;
+    }
+
+    // Group items by their destination chat (requester's notifyChatId or admin fallback)
+    const byChat = new Map();
+    for (const item of items) {
+      const requester = item.requestedBy;
+      const user = requester
+        ? findByJellyseerr({ username: requester.username, id: requester.jellyseerrId })
+        : null;
+      const chatId = user?.notifyChatId || adminChatId();
+      if (!chatId) continue;
+      if (!byChat.has(chatId)) byChat.set(chatId, []);
+      byChat.get(chatId).push(item);
+    }
+
+    for (const [chatId, chatItems] of byChat) {
+      const lines = chatItems.map((i) => `• *${i.title}* — búsqueda reiniciada`);
+      const text = `🔧 *Auto-fix torrents* (${chatItems.length}):\n${lines.join('\n')}`;
+      try {
+        await sock.sendMessage(chatId, { text });
+      } catch (err) {
+        console.error(`[Scheduler] Error enviando auto-fix a ${chatId}:`, err.message);
       }
     }
   } catch (err) {
