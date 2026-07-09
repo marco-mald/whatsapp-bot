@@ -176,6 +176,8 @@ chat JIDs), `WEBHOOK_PORT/TOKEN`, `QUIET_HOURS`, `JELLYFIN_URL/API_KEY`,
 `CLAUDE_MODEL_ADMIN` (stronger model for the admin surface), `OPTIMIZE_CONCURRENCY`
 (night optimizer parallel jobs, default 2), `GROUP_DAILY_LIMIT` (soft daily cap
 per group, default 100), `MAX_CONCURRENT_RUNS` (global concurrency cap, default 4).
+Note: the CLI does not expose a `--max-tokens` flag in print mode (verified 2.1.107);
+use `--max-budget-usd` if token spend needs capping.
 
 One-time host config:
 

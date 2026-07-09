@@ -14,17 +14,15 @@ La propuesta se divide en tres tiers ordenados por impacto/esfuerzo.
 
 ### 1A. max_tokens + temperatura en la invocación de Claude
 
-**Problema:** no hay `--max-tokens` configurado. Sonnet puede generar hasta ~8,000 tokens por respuesta. La respuesta media del bot es ~400 tokens. Sin límite, el modelo puede generar respuestas muy largas que consumen tiempo y costo innecesario, y que luego se truncan a 59,000 chars en handler.js como último recurso.
+**Estado: bloqueado — CLI 2.1.107 no expone `--max-tokens` en print mode.**
 
-**Cambio en `src/services/claudeApi.js`:**
+Verificado 2026-07-08: `claude -p --help` no muestra `--max-tokens`. El flag no existe. La alternativa es `--max-budget-usd` (presupuesto en USD, no tokens). Temperatura tampoco está expuesta como flag.
+
+El prompt ya instruye respuestas breves ("breve, *negritas*, emojis") lo que mitiga el problema. Si en una versión futura el CLI expone `--max-tokens`, añadir:
 ```js
 '--max-tokens', '800',    // restricted/mediaops
-// admin: '--max-tokens', '1500'  (diagnósticos son más largos)
+'--max-tokens', '1500',   // admin
 ```
-
-Temperatura: Sonnet ya tiene comportamiento razonablemente consistente. No cambiar temperature por ahora — el CLI de Claude no expone `--temperature` como flag documentado estable. El foco es `--max-tokens`.
-
-**Impacto:** ~30-50% reducción en tokens de output en promedio, latencia de generación reducida, costo por llamada menor.
 
 ---
 
@@ -213,14 +211,18 @@ Resultado: al debuggear "¿por qué el usuario X recibió respuesta Y?", se busc
 
 ---
 
-## Orden de implementación
+## Estado de implementación
 
 ```
-Inmediato: 1D + 1E     (correctitud, sin cambio de comportamiento)
-Semana 1:  1A + 1B + 1C (calidad de respuesta)
-Semana 1:  2C          (latencia media_file_info — 1h, sin riesgo)
-Semana 2:  2D          (correctitud history/inflight)
-Semana 2:  2A          (historial enriquecido)
-Semana 3:  2B          (MCP persistente — verificar FastMCP versión primero)
-Semana 3:  3A tools    (recently_added + seasons_info primero)
+✅ 1B  Instrucción de historial movida al SYSTEM_PROMPT
+✅ 1C  Retry de tools con instrucción explícita
+✅ 1D  Guard en JSON.parse (ahora: guard en result event stream)
+✅ 1E  Backoff en retry de claudeApi.js
+✅ 2A  Historial enriquecido con tool call results
+✅ 2C  media_file_info optimizado (tmdbId filter)
+⛔ 1A  max_tokens: flag no existe en CLI 2.1.107 — pendiente de versión futura
+⬜ 2B  MCP server persistente (SSE) — verificar FastMCP versión primero
+⬜ 2D  Race conditions en history/inflight
+⬜ 3A  Nuevas tools (recently_added, seasons_info, fix_stalled, media_remove)
+⬜ 3B  Correlación de logs Node ↔ MCP (runId)
 ```

@@ -108,8 +108,8 @@ async def queue_tmdb_by_hash() -> dict[str, dict]:
 async def movie_file_info(tmdb_id: int) -> dict:
     """Get details about the downloaded file for a movie: quality, languages,
     audio tracks, size, etc. from Radarr."""
-    movies = await _get("radarr", "/movie")
-    match = next((m for m in movies if m.get("tmdbId") == tmdb_id), None)
+    movies = await _get("radarr", "/movie", {"tmdbId": tmdb_id})
+    match = next(iter(movies), None)
     if not match:
         return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
 
@@ -152,8 +152,8 @@ async def movie_file_info(tmdb_id: int) -> dict:
 async def series_file_info(tmdb_id: int) -> dict:
     """Aggregate file info for a TV series from Sonarr: episode file count,
     total size, and distinct codecs/audio languages across all episode files."""
-    series_list = await _get("sonarr", "/series")
-    match = next((s for s in series_list if s.get("tmdbId") == tmdb_id), None)
+    series_list = await _get("sonarr", "/series", {"tmdbId": tmdb_id})
+    match = next(iter(series_list), None)
     if not match:
         return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
     series_id = match["id"]
@@ -207,8 +207,8 @@ async def _post(app: str, path: str, body: dict | None = None):
 async def search_movie(tmdb_id: int) -> dict:
     """Trigger an automatic search in Radarr for a movie by tmdbId.
     Radarr will look for a new release matching its quality profile."""
-    movies = await _get("radarr", "/movie")
-    match = next((m for m in movies if m.get("tmdbId") == tmdb_id), None)
+    movies = await _get("radarr", "/movie", {"tmdbId": tmdb_id})
+    match = next(iter(movies), None)
     if not match:
         return {"error": f"Movie with tmdbId {tmdb_id} not found in Radarr"}
 

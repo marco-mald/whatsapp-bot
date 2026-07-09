@@ -1,8 +1,5 @@
-const { execFile } = require('child_process');
-const { promisify } = require('util');
+const { spawn } = require('child_process');
 const path = require('path');
-
-const execFileAsync = promisify(execFile);
 
 const MCP_CONFIG = path.join(__dirname, '..', '..', 'mcp', 'mediaops.mcp.json');
 // Same server with MEDIAOPS_PROFILE=restricted: only registers the 17
@@ -75,29 +72,93 @@ const RESTRICTED_TOOLS = [
   'subtitles_search',
 ].map((t) => `mcp__mediaops__${t}`).join(',');
 
-async function runOnce(args) {
-  const { stdout } = await execFileAsync('claude', args, {
-    timeout: 90000,
-    maxBuffer: 10 * 1024 * 1024,
-    cwd: process.env.HOME,
-    // ENABLE_TOOL_SEARCH=false: CLI ≥2.1 defers MCP tools behind a ToolSearch
-    // step by default, which adds an extra round-trip and tells users
-    // "el servidor mediaops sigue reconectando". Our 30-ish tools fit
-    // fine in context, so load them eagerly.
-    env: { ...process.env, ENABLE_TOOL_SEARCH: 'false' },
-    // Explicit closed stdin: without this the CLI waits ~3s checking for
-    // piped input on every single call, adding latency for no reason here.
-    stdio: ['ignore', 'pipe', 'pipe'],
-  });
+// Runs the Claude CLI and returns { reply, toolUses }.
+// Uses stream-json + --verbose to capture tool_use events in real time,
+// so callers can persist which tools ran (and with what key args) alongside
+// the bot's visible reply in the conversation history.
+function runOnce(args) {
+  return new Promise((resolve, reject) => {
+    const fullArgs = ['-p', '--verbose', '--output-format', 'stream-json', ...args];
+    const proc = spawn('claude', fullArgs, {
+      cwd: process.env.HOME,
+      // ENABLE_TOOL_SEARCH=false: CLI ≥2.1 defers MCP tools behind a ToolSearch
+      // step by default, which adds an extra round-trip and tells users
+      // "el servidor mediaops sigue reconectando". Our 30-ish tools fit
+      // fine in context, so load them eagerly.
+      env: { ...process.env, ENABLE_TOOL_SEARCH: 'false' },
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
 
-  let data;
-  try {
-    data = JSON.parse(stdout.trim());
-  } catch (e) {
-    throw new Error(`CLI output parse failed: ${e.message} — stdout: ${stdout.slice(0, 500)}`);
-  }
-  if (data.is_error) throw new Error(data.result || 'Error desconocido del CLI');
-  return { reply: data.result };
+    let buf = '';
+    let stderrBuf = '';
+    const toolUses = [];
+    let resultEvent = null;
+    let settled = false;
+
+    function processLine(line) {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      let event;
+      try { event = JSON.parse(trimmed); } catch { return; }
+      if (event.type === 'assistant') {
+        for (const block of (event.message?.content || [])) {
+          if (block.type === 'tool_use') toolUses.push(block);
+        }
+      } else if (event.type === 'result') {
+        resultEvent = event;
+      }
+    }
+
+    proc.stdout.on('data', (chunk) => {
+      buf += chunk.toString();
+      const lines = buf.split('\n');
+      buf = lines.pop(); // keep incomplete trailing fragment
+      for (const line of lines) processLine(line);
+    });
+
+    proc.stderr.on('data', (chunk) => { stderrBuf += chunk.toString(); });
+
+    proc.on('error', (err) => {
+      if (settled) return;
+      settled = true;
+      reject(Object.assign(err, { stderr: stderrBuf }));
+    });
+
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      proc.kill();
+      const err = new Error('CLI timeout after 90s');
+      err.code = 'ETIMEDOUT';
+      err.stderr = stderrBuf;
+      reject(err);
+    }, 90000);
+
+    proc.on('close', (code) => {
+      clearTimeout(timer);
+      if (settled) return;
+      settled = true;
+
+      // Process any remaining buffered fragment
+      if (buf.trim()) processLine(buf);
+
+      if (!resultEvent) {
+        const err = new Error(`CLI exited ${code} with no result event — stderr: ${stderrBuf.slice(0, 400)}`);
+        err.code = code;
+        err.stderr = stderrBuf;
+        return reject(err);
+      }
+
+      if (resultEvent.is_error) {
+        const err = new Error(resultEvent.result || 'Error desconocido del CLI');
+        err.code = code;
+        err.stderr = stderrBuf;
+        return reject(err);
+      }
+
+      resolve({ reply: resultEvent.result, toolUses });
+    });
+  });
 }
 
 // Only modes that actually have the memory tools get this instruction —
@@ -128,10 +189,9 @@ async function claudeChat(message, mode = 'mediaops', extraContext = '') {
   const defaultModel = process.env.CLAUDE_MODEL || 'sonnet';
   const adminModel = process.env.CLAUDE_MODEL_ADMIN || 'sonnet';
   const model = mode === 'full' ? adminModel : defaultModel;
-  const maxTokens = mode === 'full' ? (process.env.CLAUDE_MAX_TOKENS_ADMIN || '1500')
-    : (process.env.CLAUDE_MAX_TOKENS || '800');
-  const args = ['-p', '--output-format', 'json', '--model', model,
-    '--max-tokens', maxTokens,
+  // Note: the Claude CLI does not expose --max-tokens in print mode (2.1.x).
+  // Token budget is enforced via --max-budget-usd if needed.
+  const args = ['--model', model,
     '--system-prompt', system, '--tools', '', '--strict-mcp-config'];
 
   if (mode === 'restricted') {
@@ -151,9 +211,8 @@ async function claudeChat(message, mode = 'mediaops', extraContext = '') {
     // Parse failures are not transient — retrying the exact same call won't fix
     // a bad stdout. Only retry process/network errors (no exit code = spawn
     // failure; code 1 = CLI error; ETIMEDOUT = timeout).
-    const isTransient = !err.message.startsWith('CLI output parse failed') &&
-      (err.code == null || err.code === 1 || err.code === 'ETIMEDOUT' ||
-       err.code === 'ERR_CHILD_PROCESS_STDIO_MAXBUFFER');
+    const isTransient = !err.message.startsWith('CLI exited') &&
+      (err.code == null || err.code === 1 || err.code === 'ETIMEDOUT');
     console.error(
       '[ClaudeApi] Primer intento falló%s. code=%s msg=%s',
       isTransient ? ', reintentando' : ', no reintentable',

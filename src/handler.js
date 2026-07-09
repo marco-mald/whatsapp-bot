@@ -41,6 +41,38 @@ const FALSE_PROMISE_RE = /program[eé]|agend[eé]|te aviso (en|cuando)|encaden|a
 //     registered users → Claude in 'restricted' mode (query + request media).
 //   - Unknown numbers: ignored entirely (zero trust).
 
+// Extract key identifiers from Claude's tool_use blocks so the history can
+// carry them forward without re-searching. Keeps only the fields that help
+// disambiguate follow-ups ("agrégala", "cancélalo", "dame info").
+const TOOL_KEY_FIELDS = {
+  library_search: ['tmdbId'],
+  media_add: ['tmdbId'],
+  media_file_info: ['tmdbId'],
+  downloads_status: ['hash'],
+  downloads_delete: ['hash'],
+  downloads_control: ['hash', 'job_id'],
+  optimization_run: ['job_id'],
+  optimization_job: ['job_id'],
+  optimization_cancel: ['job_id'],
+};
+
+function extractToolKeys(toolUses) {
+  if (!toolUses || !toolUses.length) return null;
+  const out = [];
+  for (const tu of toolUses) {
+    const rawName = tu.name || '';
+    // Strip the mcp__mediaops__ prefix added by the CLI
+    const name = rawName.replace(/^mcp__[^_]+__/, '');
+    const fields = TOOL_KEY_FIELDS[name];
+    if (!fields) continue;
+    for (const field of fields) {
+      const val = tu.input?.[field];
+      if (val != null) out.push({ name, key: field, value: val });
+    }
+  }
+  return out.length ? out : null;
+}
+
 const ADMIN_NUMBER = process.env.ADMIN_NUMBER || '';
 const ADMIN_GROUP_NAME = (process.env.ADMIN_GROUP_NAME || 'Debug').trim().toLowerCase();
 
@@ -143,7 +175,13 @@ function buildContext({ user, isAdminSender, mode, chatJid, senderPhone }) {
   }
   const recent = history.getHistory(`${chatJid}:${senderPhone}`);
   if (recent.length) {
-    const convo = recent.map((h) => `${h.role === 'bot' ? 'Tú' : name}: ${h.text}`).join('\n');
+    const convo = recent.map((h) => {
+      const speaker = h.role === 'bot' ? 'Tú' : name;
+      const toolTag = (h.tools && h.tools.length)
+        ? ` [${h.tools.map((t) => `${t.name}→${t.key}=${t.value}`).join(', ')}]`
+        : '';
+      return `${speaker}${toolTag}: ${h.text}`;
+    }).join('\n');
     lines.push(`[HISTORIAL con ${name}]:\n${convo}`);
   }
   lines.push(
@@ -189,7 +227,7 @@ async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, m
     await sock.sendPresenceUpdate('composing', replyJid);
     const thinking = THINKING_REPLIES[Math.floor(Math.random() * THINKING_REPLIES.length)];
     await sock.sendMessage(replyJid, { text: thinking });
-    const { reply } = await claudeChat(text, mode, context);
+    const { reply, toolUses } = await claudeChat(text, mode, context);
 
     // Moderation: the LLM appends [[TIMEOUT:N]] to ban a persistent abuser.
     // Enforce the ban here, strip the token from what the user sees. Admin immune.
@@ -219,7 +257,7 @@ async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, m
       console.warn('[NL] Respuesta vacía del CLI — no se envió nada');
     }
     history.record(sessionKey, 'user', historyText || text);
-    history.record(sessionKey, 'bot', visible);
+    history.record(sessionKey, 'bot', visible, extractToolKeys(toolUses));
     await sendPosters(sock, replyJid, withPosters);
   } catch (err) {
     console.error(

@@ -28,12 +28,17 @@ function persist(store) {
   }
 }
 
-function record(key, role, text) {
+// tools: optional array of { name, key, value } extracted from tool_use blocks,
+// e.g. [{ name: "library_search", key: "tmdbId", value: 157336 }]. Rendered
+// inline in HISTORIAL so the model doesn't need to re-search for known IDs.
+function record(key, role, text, tools) {
   const clean = (text || '').trim();
   if (!clean) return;
   const store = load();
   const list = store[key] || [];
-  list.push({ role, text: clean.slice(0, MAX_LEN), ts: Date.now() });
+  const entry = { role, text: clean.slice(0, MAX_LEN), ts: Date.now() };
+  if (tools && tools.length) entry.tools = tools;
+  list.push(entry);
   store[key] = list.slice(-MAX_MESSAGES); // rolling window, overwrites oldest
   persist(store);
 }
