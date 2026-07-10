@@ -34,6 +34,19 @@ async def _get(app: str, path: str, params: dict | None = None):
         return res.json()
 
 
+async def _find_series(tmdb_id: int) -> dict | None:
+    """Sonarr's /series endpoint silently IGNORES ?tmdbId= — it only indexes
+    by tvdbId, so that query param has no effect and it always returns every
+    series unfiltered (verified live 2026-07-09: same 8 results with or
+    without the filter). Unlike Radarr's /movie, which genuinely filters by
+    tmdbId server-side. Must match client-side or callers silently get
+    whichever series happens to be first in Sonarr's list, regardless of the
+    tmdb_id requested (bug that shipped 2026-07-08, caused Game of Thrones
+    lookups to return House of the Dragon's data)."""
+    series_list = await _get("sonarr", "/series")
+    return next((s for s in series_list if s.get("tmdbId") == tmdb_id), None)
+
+
 def _queue_title(app: str, record: dict) -> str:
     if app == "radarr":
         return record.get("title") or "?"
@@ -152,8 +165,7 @@ async def movie_file_info(tmdb_id: int) -> dict:
 async def series_file_info(tmdb_id: int) -> dict:
     """Aggregate file info for a TV series from Sonarr: episode file count,
     total size, and distinct codecs/audio languages across all episode files."""
-    series_list = await _get("sonarr", "/series", {"tmdbId": tmdb_id})
-    match = next(iter(series_list), None)
+    match = await _find_series(tmdb_id)
     if not match:
         return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
     series_id = match["id"]
@@ -237,8 +249,7 @@ async def recently_added(limit: int = 10, days: int = 30) -> dict:
 
 async def seasons_info(tmdb_id: int) -> dict:
     """Season breakdown for a TV series: episodes total/downloaded/% per season."""
-    series_list = await _get("sonarr", "/series", {"tmdbId": tmdb_id})
-    match = next(iter(series_list), None)
+    match = await _find_series(tmdb_id)
     if not match:
         return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
     seasons = []
@@ -262,8 +273,7 @@ async def seasons_info(tmdb_id: int) -> dict:
 
 async def search_series(tmdb_id: int) -> dict:
     """Trigger an automatic search in Sonarr for a series by tmdbId."""
-    series_list = await _get("sonarr", "/series", {"tmdbId": tmdb_id})
-    match = next(iter(series_list), None)
+    match = await _find_series(tmdb_id)
     if not match:
         return {"error": f"Series with tmdbId {tmdb_id} not found in Sonarr"}
     await _post("sonarr", "/command", {"name": "SeriesSearch", "seriesId": match["id"]})
