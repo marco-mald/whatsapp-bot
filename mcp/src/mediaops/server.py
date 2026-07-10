@@ -675,28 +675,45 @@ async def fix_stalled_downloads() -> str:
         if not stalled:
             return _dumps({"fixed": 0, "message": "No hay torrents estancados"})
         fixed = []
+        errors = []
         for t in stalled:
             info = by_hash.get(t["hash"].lower())
             if not info:
                 continue
-            await qbittorrent.delete_torrents([t["hash"]], delete_files=False)
-            if info["app"] == "radarr":
-                search = await arr_media.search_movie(info["tmdbId"])
-            else:
-                search = await arr_media.search_series(info["tmdbId"])
-            requester = await jellyseerr.requester_by_tmdb(info["tmdbId"])
-            item = {
-                "title": info["title"],
-                "app": info["app"],
-                "tmdbId": info["tmdbId"],
-                "state_was": t["state"],
-                "progress_was": t["progress"],
-                "search": search.get("status", "unknown"),
-            }
-            if requester:
-                item["requestedBy"] = requester
-            fixed.append(item)
-        return _dumps({"fixed": len(fixed), "items": fixed})
+            # Each item gets its own try/except: an unexpected failure on one
+            # torrent (e.g. a Jellyseerr hiccup on the requester lookup) must
+            # never erase the record of others already deleted+re-searched in
+            # this same run — that's exactly what hid a real incident
+            # 2026-07-08 (a crash on 'Rocketman' mid-loop turned the whole run
+            # into a bare error string, silently swallowing whatever had
+            # already been fixed, with zero notification to anyone).
+            try:
+                await qbittorrent.delete_torrents([t["hash"]], delete_files=False)
+                if info["app"] == "radarr":
+                    search = await arr_media.search_movie(info["tmdbId"])
+                else:
+                    search = await arr_media.search_series(info["tmdbId"])
+                item = {
+                    "title": info["title"],
+                    "app": info["app"],
+                    "tmdbId": info["tmdbId"],
+                    "state_was": t["state"],
+                    "progress_was": t["progress"],
+                    "search": search.get("status", "unknown"),
+                }
+                try:
+                    requester = await jellyseerr.requester_by_tmdb(info["tmdbId"])
+                    if requester:
+                        item["requestedBy"] = requester
+                except Exception as err:
+                    item["requestedBy_error"] = str(err)
+                fixed.append(item)
+            except Exception as err:
+                errors.append({"title": info.get("title"), "tmdbId": info.get("tmdbId"), "error": str(err)})
+        result = {"fixed": len(fixed), "items": fixed}
+        if errors:
+            result["errors"] = errors
+        return _dumps(result)
     except Exception as err:
         return f"fix_stalled_downloads failed: {err}"
 

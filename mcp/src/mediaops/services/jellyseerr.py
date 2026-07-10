@@ -139,8 +139,17 @@ async def user_request_tmdb_ids(jellyseerr_user_id: int, take: int = 50) -> set[
 async def requester_by_tmdb(tmdb_id: int) -> dict | None:
     """Return the Jellyseerr requester for a given tmdbId, or None if not found.
     Result: {jellyseerrId, username} of the user who requested it."""
-    data = await _get("/api/v1/request", {"take": 5, "sort": "added", "mediaId": tmdb_id})
-    req = next(iter(data.get("results", [])), None)
+    # /api/v1/request has no tmdbId filter — 'mediaId' means Jellyseerr's own
+    # internal Media.id (a small sequential DB key), NOT tmdbId. Passing a
+    # tmdbId there 400s or silently matches nothing (verified live 2026-07-09:
+    # a real auto-fix run crashed here on 'Rocketman', tmdbId 504608, hiding
+    # whatever else that run had already fixed). Match client-side instead,
+    # same pattern as user_request_tmdb_ids.
+    data = await _get("/api/v1/request", {"take": 100, "sort": "added"})
+    req = next(
+        (r for r in data.get("results", []) if (r.get("media") or {}).get("tmdbId") == tmdb_id),
+        None,
+    )
     if not req:
         return None
     requested_by = req.get("requestedBy") or {}

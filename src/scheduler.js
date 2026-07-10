@@ -144,19 +144,33 @@ async function runStalledFix(sockRef) {
       'Sistema: tarea automática de mantenimiento.'
     );
 
-    // Only act when the JSON confirms fixed > 0
-    const fixedMatch = reply && reply.match(/"fixed"\s*:\s*(\d+)/);
-    if (!fixedMatch || parseInt(fixedMatch[1], 10) === 0) return;
-
     const sock = sockRef.current;
     if (!sock) return;
 
-    // Parse items to route each one to the requester's group
+    // Parse items/errors to route each one to the requester's group. Any
+    // per-item failure server-side (e.g. a Jellyseerr hiccup) surfaces here
+    // instead of silently vanishing inside a swallowed exception — a real
+    // incident 2026-07-08 crashed mid-run and nobody found out a torrent had
+    // already been deleted+re-searched before the crash.
     let items = [];
+    let errors = [];
     try {
       const parsed = JSON.parse(reply);
       items = parsed.items || [];
+      errors = parsed.errors || [];
     } catch { /* malformed JSON — fall back to admin-only */ }
+
+    if (errors.length) {
+      const jid = adminChatId();
+      if (jid) {
+        const lines = errors.map((e) => `• ${e.title || e.tmdbId || '?'}: ${e.error}`);
+        await sock.sendMessage(jid, { text: `⚠️ *Auto-fix torrents — errores:*\n${lines.join('\n')}` }).catch(() => {});
+      }
+    }
+
+    // Only continue to the "fixed" notification when the JSON confirms fixed > 0
+    const fixedMatch = reply && reply.match(/"fixed"\s*:\s*(\d+)/);
+    if (!fixedMatch || parseInt(fixedMatch[1], 10) === 0) return;
 
     if (!items.length) {
       // No item detail available — just notify admin
