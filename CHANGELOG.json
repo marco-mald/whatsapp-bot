@@ -1,4 +1,4 @@
 {
-  "version": "1.1.1",
-  "announcement": "🤖 *MediaOps v1.1.1*\n\n*Arreglos de hoy:*\n• 🐛 *Bug de series* — al pedir info/temporadas/descargas de una serie a veces mostraba datos de otra serie totalmente distinta. Ya identifica bien cada serie.\n• 🔌 *Conexión más estable* — quité una reconexión innecesaria que se disparaba cuando un grupo llevaba rato sin mensajes."
+  "version": "1.1.2",
+  "announcement": "🤖 *MediaOps v1.1.2*\n\n*Arreglo de hoy:*\n• 📝 *Subtítulos más inteligentes* — antes de buscar subtítulos ahora reviso si ya existen. Si ya los tienes te lo digo directo, sin lanzar una búsqueda innecesaria."
 }
