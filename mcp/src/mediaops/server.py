@@ -59,12 +59,41 @@ mcp = FastMCP("mediaops")
 from pathlib import Path
 
 TOOL_LOG = Path(__file__).resolve().parents[3] / "data" / "tool-calls.jsonl"
+STALLED_STATE_PATH = Path(__file__).resolve().parents[3] / "data" / "stalled-state.json"
+
+# fix_stalled_downloads requires a torrent to be seen stalled across multiple
+# consecutive 20-min runs before acting — a single stalledDL/error reading is
+# a point-in-time qBittorrent state that can flicker for seconds (a peer
+# reconnect blip), not evidence of a real problem. Torrents close to done get
+# a longer confirmation window: losing 90%+ progress to a false positive is
+# far more costly than losing 10%, and near-complete torrents are more likely
+# to self-recover anyway (final piece hash-check, tracker re-announce, etc).
+STALL_CONFIRM_SECONDS = 20 * 60       # ~1 extra run for progress < HIGH_PROGRESS
+STALL_CONFIRM_SECONDS_HIGH = 90 * 60  # ~4 extra runs for progress >= HIGH_PROGRESS
+HIGH_PROGRESS = 90.0
+
+
+def _load_stalled_state() -> dict:
+    try:
+        return json.loads(STALLED_STATE_PATH.read_text())
+    except Exception:
+        return {}
+
+
+def _save_stalled_state(state: dict) -> None:
+    STALLED_STATE_PATH.parent.mkdir(exist_ok=True)
+    STALLED_STATE_PATH.write_text(json.dumps(state, indent=1))
 
 
 def _log_call(tool: str, kwargs: dict, result, secs: float) -> None:
     try:
         text = result if isinstance(result, str) else json.dumps(result, ensure_ascii=False)
-        head = text[:220]
+        # 80 chars was too tight to audit multi-item tool results after the
+        # fact — e.g. fix_stalled_downloads' per-torrent progress_was/
+        # state_was got silently cut, making "how close was it when deleted"
+        # unanswerable from this log alone (found 2026-07-09). 600 covers a
+        # handful of items while still bounding log growth.
+        head = text[:600]
         ok = not (
             "failed:" in head
             or head.startswith("EXCEPTION")
@@ -76,7 +105,7 @@ def _log_call(tool: str, kwargs: dict, result, secs: float) -> None:
             "args": json.dumps(kwargs, ensure_ascii=False, default=str)[:150],
             "ok": ok,
             "secs": round(secs, 2),
-            "result": head if not ok else head[:80],
+            "result": head,
         }
         run_id = os.environ.get("MEDIAOPS_RUN_ID")
         if run_id:
@@ -682,27 +711,70 @@ async def seasons_info(tmdb_id: int) -> str:
 
 @mcp.tool()
 async def fix_stalled_downloads() -> str:
-    """Find stalled torrents (stalledDL/error state, progress < 100%), delete
-    them from qBittorrent, and trigger a new Radarr/Sonarr search — which picks
-    the best available release per quality profile automatically. Ignores
-    torrents at 100% progress (content already on disk, just seeding). Available
-    to all users. Returns what was fixed, or a message if nothing was stalled."""
+    """Find torrents CONFIRMED stalled (stalledDL/error state, progress <
+    100%, seen in that state across multiple consecutive 20-min checks — a
+    single reading is not enough, qBittorrent's stalledDL can flicker for
+    seconds on a peer blip), delete them from qBittorrent WITH their partial
+    files (a re-search rarely grabs the identical release, so the partial
+    almost never helps a resume — it just wastes disk sitting there), and
+    trigger a new Radarr/Sonarr search. Torrents at 90%+ progress need a much
+    longer confirmed-stalled window before being touched, since losing that
+    much progress to a false positive is costly and near-complete torrents
+    are the most likely to self-recover. Ignores torrents at 100% (already on
+    disk). Available to all users. Returns fixed items, or a message if
+    nothing was stalled long enough yet — check 'watching' for torrents seen
+    stalled but not yet past their confirmation window."""
     try:
         all_torrents, by_hash = await asyncio.gather(
             qbittorrent.torrents(),
             arr_media.queue_tmdb_by_hash(),
         )
-        stalled = [
-            t for t in all_torrents
+        candidates = {
+            t["hash"].lower(): t for t in all_torrents
             if t["state"] in ("stalledDL", "error") and t["progress"] < 100.0
-        ]
-        if not stalled:
-            return _dumps({"fixed": 0, "message": "No hay torrents estancados"})
+        }
+
+        state = _load_stalled_state()
+        now = time.time()
+        to_fix = []
+        watching = []
+        for h, t in candidates.items():
+            required = STALL_CONFIRM_SECONDS_HIGH if t["progress"] >= HIGH_PROGRESS else STALL_CONFIRM_SECONDS
+            first_seen = state.get(h, {}).get("first_seen")
+            title = (by_hash.get(h) or {}).get("title") or t["name"]
+            if first_seen is None:
+                state[h] = {"first_seen": now, "progress_at_first_seen": t["progress"]}
+                watching.append({"title": title, "progress": t["progress"], "confirms_in_minutes": round(required / 60)})
+                continue
+            elapsed = now - first_seen
+            if elapsed >= required:
+                to_fix.append(t)
+            else:
+                watching.append({
+                    "title": title,
+                    "progress": t["progress"],
+                    "stalled_for_minutes": round(elapsed / 60, 1),
+                    "confirms_in_minutes": round((required - elapsed) / 60, 1),
+                })
+        # Stop watching anything no longer a candidate (recovered or gone)
+        for h in list(state.keys()):
+            if h not in candidates:
+                del state[h]
+
+        if not to_fix:
+            _save_stalled_state(state)
+            msg = "No hay torrents confirmados como estancados"
+            result = {"fixed": 0, "message": msg}
+            if watching:
+                result["watching"] = watching
+            return _dumps(result)
+
         fixed = []
         errors = []
-        for t in stalled:
+        for t in to_fix:
             info = by_hash.get(t["hash"].lower())
             if not info:
+                del state[t["hash"].lower()]
                 continue
             # Each item gets its own try/except: an unexpected failure on one
             # torrent (e.g. a Jellyseerr hiccup on the requester lookup) must
@@ -712,7 +784,8 @@ async def fix_stalled_downloads() -> str:
             # into a bare error string, silently swallowing whatever had
             # already been fixed, with zero notification to anyone).
             try:
-                await qbittorrent.delete_torrents([t["hash"]], delete_files=False)
+                await qbittorrent.delete_torrents([t["hash"]], delete_files=True)
+                del state[t["hash"].lower()]
                 if info["app"] == "radarr":
                     search = await arr_media.search_movie(info["tmdbId"])
                 else:
@@ -734,9 +807,12 @@ async def fix_stalled_downloads() -> str:
                 fixed.append(item)
             except Exception as err:
                 errors.append({"title": info.get("title"), "tmdbId": info.get("tmdbId"), "error": str(err)})
+        _save_stalled_state(state)
         result = {"fixed": len(fixed), "items": fixed}
         if errors:
             result["errors"] = errors
+        if watching:
+            result["watching"] = watching
         return _dumps(result)
     except Exception as err:
         return f"fix_stalled_downloads failed: {err}"
