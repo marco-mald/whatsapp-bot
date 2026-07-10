@@ -26,7 +26,6 @@ let reconnectDelay = RECONNECT_BASE_MS;
 let openSince = 0;
 
 // Zombie socket watchdog state
-let lastActivity = 0;
 let watchdogTimer = null;
 
 // Reconnection storm detection
@@ -68,7 +67,6 @@ async function connectToWhatsApp() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    lastActivity = Date.now();
     for (const msg of messages) {
       if (msg.message && msg.key?.id) {
         messageStore.set(`${msg.key.remoteJid}:${msg.key.id}`, msg.message);
@@ -96,8 +94,6 @@ async function connectToWhatsApp() {
   });
 
   sock.ev.on('connection.update', ({ connection, lastDisconnect, qr }) => {
-    lastActivity = Date.now();
-
     if (qr) {
       console.log('\n[Bot] Escanea este QR con WhatsApp:\n');
       qrcode.generate(qr, { small: true });
@@ -146,17 +142,24 @@ async function connectToWhatsApp() {
     } else if (connection === 'open') {
       console.log('[Bot] ✅ Conectado a WhatsApp');
       openSince = Date.now();
-      lastActivity = Date.now();
 
-      // Zombie socket watchdog: force-close if no activity for >5 min while "open"
+      // Zombie socket watchdog: an idle group is NOT a zombie — a passive
+      // "no messages seen in N minutes" check (the original version of this)
+      // fired on every ordinary quiet period and reconnected every ~5 min
+      // around the clock (found live 2026-07-09). Instead, actively probe
+      // the socket itself: a presence update that succeeds proves the
+      // connection is real; one that throws/hangs is the actual zombie
+      // signal (what happened 2026-07-06 — 'open' but delivering nothing).
       if (watchdogTimer) clearInterval(watchdogTimer);
-      watchdogTimer = setInterval(() => {
-        const ZOMBIE_TIMEOUT_MS = 5 * 60 * 1000;
-        if (sockRef.current === sock && Date.now() - lastActivity > ZOMBIE_TIMEOUT_MS) {
-          console.warn('[Bot] Watchdog: socket inactivo >5 min — forzando reconexión');
-          try { sock.end(new Error('watchdog: socket inactivo')); } catch {}
+      watchdogTimer = setInterval(async () => {
+        if (sockRef.current !== sock) return;
+        try {
+          await sock.sendPresenceUpdate('available');
+        } catch (err) {
+          console.warn('[Bot] Watchdog: probe de presencia falló — forzando reconexión:', err.message);
+          try { sock.end(new Error('watchdog: presence probe failed')); } catch {}
         }
-      }, 60 * 1000);
+      }, 3 * 60 * 1000);
 
       registerBotIdentity(sock);
       resolveAdminGroup(sock).then(() => retryPending(sock)).catch(() => {});
