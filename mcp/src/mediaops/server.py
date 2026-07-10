@@ -473,18 +473,42 @@ async def subtitles_missing(limit: int = 20) -> str:
 
 @mcp.tool()
 async def subtitles_search(media_type: str, item_id: int) -> str:
-    """Trigger a missing-subtitles search in Bazarr. media_type 'movie'
-    (item_id = radarrId) or 'series' (item_id = sonarrSeriesId — searches ALL
-    missing episodes of that series); ids ONLY from subtitles_missing — never
-    a tmdbId. Bazarr downloads the best match by itself, may take minutes,
-    and can find nothing: say 'búsqueda iniciada', never promise or claim the
-    subtitle was found."""
+    """Search Bazarr for missing subtitles. media_type 'movie' (item_id =
+    radarrId) or 'series' (item_id = sonarrSeriesId — checks/searches ALL
+    episodes of that series); ids ONLY from subtitles_missing — never a
+    tmdbId. ALWAYS checks current subtitle state first (code-enforced, not
+    just a prompt rule) — if everything is already present it returns
+    action='already_has_subtitles' with the list and does NOT trigger a
+    search, avoiding a pointless Bazarr run. Otherwise triggers
+    search-missing and returns action='search_triggered' — Bazarr downloads
+    the best match by itself, may take minutes, and can find nothing: say
+    'búsqueda iniciada', never promise or claim the subtitle was found."""
     try:
         if media_type == "movie":
-            return await bazarr.search_movie(item_id)
-        if media_type in ("series", "episode"):
-            return await bazarr.search_series(item_id)
-        return "media_type must be 'movie' or 'series'"
+            status = await bazarr.movie_subtitle_status(item_id)
+        elif media_type in ("series", "episode"):
+            status = await bazarr.series_subtitle_status(item_id)
+        else:
+            return "media_type must be 'movie' or 'series'"
+
+        if not status["found"]:
+            return _dumps({"error": f"{media_type} with id {item_id} not found in Bazarr"})
+
+        if not status["missing"]:
+            return _dumps({
+                "action": "already_has_subtitles",
+                "present": status["present"],
+            })
+
+        if media_type == "movie":
+            await bazarr.search_movie(item_id)
+        else:
+            await bazarr.search_series(item_id)
+        return _dumps({
+            "action": "search_triggered",
+            "was_missing": status["missing"],
+            "already_present": status["present"],
+        })
     except Exception as err:
         return f"subtitles_search failed: {err}"
 

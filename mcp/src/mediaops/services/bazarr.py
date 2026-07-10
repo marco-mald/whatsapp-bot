@@ -61,6 +61,39 @@ async def wanted(limit: int = 20) -> dict:
     }
 
 
+async def movie_subtitle_status(radarr_id: int) -> dict:
+    """Current subtitle state for one movie: languages already present vs
+    still missing (per Bazarr's configured profile), straight from Bazarr's
+    own per-item record — not the wanted-list, so it reflects reality even
+    for items that aren't in the wanted queue for any reason."""
+    data = await _request("GET", "/movies", {"radarrid[]": radarr_id})
+    items = data.get("data", [])
+    if not items:
+        return {"found": False, "present": [], "missing": []}
+    m = items[0]
+    return {
+        "found": True,
+        "present": [s["name"] for s in m.get("subtitles", [])],
+        "missing": [s["name"] for s in m.get("missing_subtitles", [])],
+    }
+
+
+async def series_subtitle_status(sonarr_series_id: int) -> dict:
+    """Current subtitle state for a whole series, aggregated across every
+    downloaded episode: union of languages present anywhere vs still missing
+    on at least one episode."""
+    data = await _request("GET", "/episodes", {"seriesid[]": sonarr_series_id})
+    items = data.get("data", [])
+    if not items:
+        return {"found": False, "present": [], "missing": []}
+    present: set[str] = set()
+    missing: set[str] = set()
+    for ep in items:
+        present.update(s["name"] for s in ep.get("subtitles", []))
+        missing.update(s["name"] for s in ep.get("missing_subtitles", []))
+    return {"found": True, "present": sorted(present), "missing": sorted(missing)}
+
+
 async def search_movie(radarr_id: int) -> str:
     # Bazarr's action is "search-missing" ("search" returns 400)
     await _request("PATCH", "/movies", {"action": "search-missing", "radarrid": radarr_id})
