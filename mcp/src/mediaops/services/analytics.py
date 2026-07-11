@@ -67,6 +67,29 @@ async def library_summary() -> dict:
     }
 
 
+# Radarr/Sonarr mediaInfo.audioLanguages uses 3-letter ISO 639-2 codes
+# joined with '/' (one per audio track, e.g. "eng/spa") — verified live
+# 2026-07-10 across the actual movie library. Family members ask in Spanish
+# by name, not by code, so map the common ones; anything not in the map
+# falls back to matching the raw input against the codes directly (covers
+# someone who already knows/uses the 3-letter code).
+_LANGUAGE_ALIASES = {
+    "español": "spa", "espanol": "spa", "spanish": "spa", "castellano": "spa",
+    "ingles": "eng", "inglés": "eng", "english": "eng",
+    "frances": "fre", "francés": "fre", "french": "fre",
+    "aleman": "ger", "alemán": "ger", "german": "ger",
+    "italiano": "ita", "italian": "ita",
+    "portugues": "por", "portugués": "por", "portuguese": "por",
+    "japones": "jpn", "japonés": "jpn", "japanese": "jpn",
+    "coreano": "kor", "korean": "kor",
+}
+
+
+def _normalize_language(language: str) -> str:
+    key = language.strip().lower()
+    return _LANGUAGE_ALIASES.get(key, key)
+
+
 def _poster_from_images(images: list) -> str | None:
     for img in (images or []):
         if img.get("coverType") == "poster":
@@ -109,3 +132,61 @@ async def library_catalog() -> dict:
     series.sort(key=lambda s: s.get("title", "").lower())
 
     return {"movies": movies, "series": series}
+
+
+async def library_by_audio_language(language: str) -> dict:
+    """Movies and series in the library with an audio track in the given
+    language (e.g. 'español'). Movies: checked from Radarr's own per-movie
+    mediaInfo (bulk /movie call, no extra requests). Series: checked per
+    downloaded episode file in Sonarr, in parallel — only series that
+    actually have files are queried."""
+    from .arr_media import _get
+
+    code = _normalize_language(language)
+    radarr_movies, sonarr_series = await asyncio.gather(
+        _get("radarr", "/movie"),
+        _get("sonarr", "/series"),
+    )
+
+    movies = []
+    for m in radarr_movies:
+        if not m.get("hasFile"):
+            continue
+        mi = (m.get("movieFile") or {}).get("mediaInfo") or {}
+        tracks = [t.strip().lower() for t in (mi.get("audioLanguages") or "").split("/") if t.strip()]
+        if code in tracks:
+            movies.append({
+                "title": m.get("title"),
+                "year": m.get("year"),
+                "tmdbId": m.get("tmdbId"),
+                "audioLanguages": sorted(set(tracks)),
+            })
+    movies.sort(key=lambda m: m.get("title", "").lower())
+
+    series_with_files = [
+        s for s in sonarr_series
+        if (s.get("statistics") or {}).get("episodeFileCount", 0) > 0
+    ]
+
+    async def _series_audio(s: dict) -> tuple[dict, set[str]]:
+        episode_files = await _get("sonarr", "/episodefile", {"seriesId": s["id"]})
+        langs: set[str] = set()
+        for ef in episode_files:
+            mi = ef.get("mediaInfo") or {}
+            langs.update(t.strip().lower() for t in (mi.get("audioLanguages") or "").split("/") if t.strip())
+        return s, langs
+
+    pairs = await asyncio.gather(*[_series_audio(s) for s in series_with_files])
+    series = [
+        {
+            "title": s.get("title"),
+            "year": s.get("year"),
+            "tmdbId": s.get("tmdbId"),
+            "audioLanguages": sorted(langs),
+        }
+        for s, langs in pairs
+        if code in langs
+    ]
+    series.sort(key=lambda s: s.get("title", "").lower())
+
+    return {"language_queried": language, "language_code": code, "movies": movies, "series": series}

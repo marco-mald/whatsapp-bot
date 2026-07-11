@@ -73,6 +73,7 @@ const RESTRICTED_TOOLS = [
   'recently_added',
   'seasons_info',
   'fix_stalled_downloads',
+  'library_by_audio_language',
 ].map((t) => `mcp__mediaops__${t}`).join(',');
 
 // Runs the Claude CLI and returns { reply, toolUses }.

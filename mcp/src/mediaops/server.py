@@ -170,6 +170,7 @@ RESTRICTED_PROFILE_TOOLS = {
     "recently_added",
     "seasons_info",
     "fix_stalled_downloads",
+    "library_by_audio_language",
 }
 
 if os.environ.get("MEDIAOPS_PROFILE") == "restricted":
@@ -646,6 +647,21 @@ async def analytics_library() -> str:
         return _dumps(await analytics.library_summary())
     except Exception as err:
         return f"analytics_library failed: {err}"
+
+
+@mcp.tool()
+async def library_by_audio_language(language: str) -> str:
+    """Movies AND series that have an audio track in the given language
+    (accepts a name like 'español'/'inglés' or a raw 3-letter code like
+    'spa'/'eng'). Checks REAL per-item audio data from Radarr/Sonarr, not a
+    guess — items with no audio info at all are excluded, never assumed to
+    match. Use for 'qué tengo en español', 'muéstrame las series con audio
+    en inglés', etc. Each result includes tmdbId for follow-up (media_file_info,
+    seasons_info...)."""
+    try:
+        return _dumps(await analytics.library_by_audio_language(language))
+    except Exception as err:
+        return f"library_by_audio_language failed: {err}"
 
 
 @mcp.tool()
