@@ -1,4 +1,4 @@
 {
-  "version": "1.1.2",
-  "announcement": "🤖 *MediaOps v1.1.2*\n\n*Arreglo de hoy:*\n• 📝 *Subtítulos más inteligentes* — antes de buscar subtítulos ahora reviso si ya existen. Si ya los tienes te lo digo directo, sin lanzar una búsqueda innecesaria."
+  "version": "1.2.0",
+  "announcement": "🤖 *MediaOps v1.2.0*\n\n*Novedad:*\n• 🗣️ *Búsqueda por idioma de audio* — ahora puedes pedir \"muéstrame lo que tiene audio en español\" (o en el idioma que sea) y te doy la lista real de películas y series, no un adivinado.\n\n*Arreglo de la semana:*\n• 📝 Antes de buscar subtítulos reviso si ya existen, para no lanzar búsquedas innecesarias."
 }
