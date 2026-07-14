@@ -727,10 +727,10 @@ async def seasons_info(tmdb_id: int) -> str:
 
 @mcp.tool()
 async def fix_stalled_downloads() -> str:
-    """Find torrents CONFIRMED stalled (stalledDL/error state, progress <
-    100%, seen in that state across multiple consecutive 20-min checks — a
-    single reading is not enough, qBittorrent's stalledDL can flicker for
-    seconds on a peer blip), delete them from qBittorrent WITH their partial
+    """Find torrents CONFIRMED stalled (stalledDL/error/metaDL state, progress
+    < 100%, seen in that state across multiple consecutive 20-min checks — a
+    single reading is not enough, qBittorrent's stalledDL/metaDL can flicker
+    for seconds on a peer blip), delete them from qBittorrent WITH their partial
     files (a re-search rarely grabs the identical release, so the partial
     almost never helps a resume — it just wastes disk sitting there), and
     trigger a new Radarr/Sonarr search. Torrents at 90%+ progress need a much
@@ -749,9 +749,16 @@ async def fix_stalled_downloads() -> str:
             qbittorrent.torrents(),
             arr_media.queue_tmdb_by_hash(),
         )
+        # metaDL = magnet stuck fetching metadata: it can't even find a peer
+        # holding the .torrent, so it's as dead as (often deader than)
+        # stalledDL — a re-search that grabbed another seedless latino magnet
+        # lands here and stays invisible forever unless we include it (found
+        # 2026-07-14: About Time / Rocketman sat in metaDL for hours untouched).
+        # The time-confirmation below still protects a briefly-normal metaDL
+        # (a fresh magnet resolves metadata in seconds, well under the window).
         candidates = {
             t["hash"].lower(): t for t in all_torrents
-            if t["state"] in ("stalledDL", "error") and t["progress"] < 100.0
+            if t["state"] in ("stalledDL", "error", "metaDL") and t["progress"] < 100.0
         }
 
         state = _load_stalled_state()
