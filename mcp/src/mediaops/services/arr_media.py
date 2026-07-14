@@ -98,7 +98,8 @@ async def queue_tmdb_by_hash() -> dict[str, dict]:
             h = (r.get("downloadId") or "").lower()
             m = by_id.get(r.get("movieId"))
             if h and m and m.get("tmdbId"):
-                out[h] = {"tmdbId": m["tmdbId"], "title": m.get("title"), "app": "radarr"}
+                out[h] = {"tmdbId": m["tmdbId"], "title": m.get("title"), "app": "radarr",
+                          "monitored": m.get("monitored", True)}
         return out
 
     async def _sonarr() -> dict[str, dict]:
@@ -111,7 +112,8 @@ async def queue_tmdb_by_hash() -> dict[str, dict]:
             h = (r.get("downloadId") or "").lower()
             s = by_id.get(r.get("seriesId"))
             if h and s and s.get("tmdbId"):
-                out[h] = {"tmdbId": s["tmdbId"], "title": s.get("title"), "app": "sonarr"}
+                out[h] = {"tmdbId": s["tmdbId"], "title": s.get("title"), "app": "sonarr",
+                          "monitored": s.get("monitored", True)}
         return out
 
     radarr, sonarr = await asyncio.gather(_radarr(), _sonarr())

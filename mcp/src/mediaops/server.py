@@ -737,9 +737,13 @@ async def fix_stalled_downloads() -> str:
     longer confirmed-stalled window before being touched, since losing that
     much progress to a false positive is costly and near-complete torrents
     are the most likely to self-recover. Ignores torrents at 100% (already on
-    disk). Available to all users. Returns fixed items, or a message if
-    nothing was stalled long enough yet — check 'watching' for torrents seen
-    stalled but not yet past their confirmation window."""
+    disk) AND anything Radarr/Sonarr has unmonitored (that flag means the
+    user or a past decision already said 'stop chasing this' — this tool
+    must never override it by force-searching anyway, see
+    'skipped_unmonitored' in the result). Available to all users. Returns
+    fixed items, or a message if nothing was stalled long enough yet — check
+    'watching' for torrents seen stalled but not yet past their confirmation
+    window."""
     try:
         all_torrents, by_hash = await asyncio.gather(
             qbittorrent.torrents(),
@@ -754,10 +758,24 @@ async def fix_stalled_downloads() -> str:
         now = time.time()
         to_fix = []
         watching = []
+        skipped_unmonitored = []
         for h, t in candidates.items():
+            info = by_hash.get(h)
+            # Respect Radarr/Sonarr's own monitored flag: if the user (or a
+            # past failure) already told the *arr to stop chasing this item,
+            # our auto-fix must not override that by force-searching anyway.
+            # This is exactly what kept re-grabbing the same seedless
+            # Trainspotting release for days (2026-07-10): the movie was
+            # unmonitored (its 4K file had been moved off-library, Radarr
+            # correctly stopped hunting it) but fix_stalled_downloads called
+            # search_movie() unconditionally regardless of that flag.
+            if info and info.get("monitored") is False:
+                state.pop(h, None)
+                skipped_unmonitored.append(info.get("title") or t["name"])
+                continue
             required = STALL_CONFIRM_SECONDS_HIGH if t["progress"] >= HIGH_PROGRESS else STALL_CONFIRM_SECONDS
             first_seen = state.get(h, {}).get("first_seen")
-            title = (by_hash.get(h) or {}).get("title") or t["name"]
+            title = (info or {}).get("title") or t["name"]
             if first_seen is None:
                 state[h] = {"first_seen": now, "progress_at_first_seen": t["progress"]}
                 watching.append({"title": title, "progress": t["progress"], "confirms_in_minutes": round(required / 60)})
@@ -783,6 +801,8 @@ async def fix_stalled_downloads() -> str:
             result = {"fixed": 0, "message": msg}
             if watching:
                 result["watching"] = watching
+            if skipped_unmonitored:
+                result["skipped_unmonitored"] = skipped_unmonitored
             return _dumps(result)
 
         fixed = []
@@ -829,6 +849,8 @@ async def fix_stalled_downloads() -> str:
             result["errors"] = errors
         if watching:
             result["watching"] = watching
+        if skipped_unmonitored:
+            result["skipped_unmonitored"] = skipped_unmonitored
         return _dumps(result)
     except Exception as err:
         return f"fix_stalled_downloads failed: {err}"
