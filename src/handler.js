@@ -9,6 +9,7 @@ const { friendlyError } = require('./errors');
 const { track, complete, getPending } = require('./inflight');
 const { recall, remember, forget } = require('./usermemory');
 const history = require('./history');
+const requestOrigins = require('./requestOrigins');
 
 // Control token the LLM appends when it decides to time out an abusive user.
 // Stripped from the visible reply; the ban is enforced deterministically here.
@@ -256,8 +257,16 @@ async function runClaude(sock, msg, { text, historyText, replyJid, sessionKey, m
     } else {
       console.warn('[NL] Respuesta vacía del CLI — no se envió nada');
     }
+    const toolKeys = extractToolKeys(toolUses);
     history.record(sessionKey, 'user', historyText || text);
-    history.record(sessionKey, 'bot', visible, extractToolKeys(toolUses));
+    history.record(sessionKey, 'bot', visible, toolKeys);
+    // Remember which chat this request came from, so the download's lifecycle
+    // notifications route back here instead of the requester's fixed group.
+    for (const k of toolKeys || []) {
+      if (k.name === 'media_add' && k.key === 'tmdbId') {
+        requestOrigins.remember(k.value, replyJid);
+      }
+    }
     await sendPosters(sock, replyJid, withPosters);
   } catch (err) {
     console.error(

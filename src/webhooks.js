@@ -2,6 +2,7 @@ const http = require('http');
 const { notify, adminChatId } = require('./notifications');
 const { findByJellyseerr } = require('./users');
 const { claudeChat } = require('./services/claudeApi');
+const requestOrigins = require('./requestOrigins');
 
 // Receives push events from Radarr / Sonarr / Jellyseerr so the bot never
 // polls. Failure events additionally trigger a rate-limited Claude diagnosis
@@ -102,8 +103,15 @@ async function handleArr(source, payload) {
 // Route a request event to the requester's own group only (Nickole's requests
 // → her group, family requests → the family group). Unknown requester →
 // Debug, so no group gets someone else's noise.
-function requesterRoute(requestedBy) {
+function requesterRoute(requestedBy, tmdbId) {
   const user = findByJellyseerr({ username: requestedBy });
+  // Prefer the chat the request actually came from (recorded on media_add):
+  // routes the notice back to the group where it was asked, not the user's
+  // fixed notifyChatId — the whole point for the admin, who asks from many.
+  const origin = tmdbId ? requestOrigins.lookup(tmdbId) : null;
+  if (origin) {
+    return { chatIds: [origin], user: user || null };
+  }
   if (!user?.notifyChatId) {
     console.warn(`[Webhooks] Solicitante "${requestedBy || '?'}" sin grupo asignado — aviso solo a Debug`);
     return { chatIds: [adminChatId()], user: null };
@@ -115,6 +123,7 @@ async function handleJellyseerr(payload) {
   const type = payload.notification_type;
   const subject = payload.subject || 'Contenido';
   const requestedBy = payload.request?.requestedBy_username;
+  const tmdbId = payload.media_tmdbid || payload.media?.tmdbId;
 
   if (type === 'TEST_NOTIFICATION') {
     console.log('[Webhooks] Test recibido de jellyseerr ✓');
@@ -123,7 +132,7 @@ async function handleJellyseerr(payload) {
 
   if (type === 'MEDIA_AVAILABLE') {
     if (isDuplicate(`available:${subject}`)) return;
-    const { chatIds, user } = requesterRoute(requestedBy);
+    const { chatIds, user } = requesterRoute(requestedBy, tmdbId);
     // Real @mention so WhatsApp pings the requester
     const who = user ? `@${user.phone} ` : (requestedBy ? `*${requestedBy}*: ` : '');
     const mentions = user ? [`${user.phone}@s.whatsapp.net`] : [];
@@ -136,7 +145,7 @@ async function handleJellyseerr(payload) {
 
   if (type === 'MEDIA_APPROVED' || type === 'MEDIA_AUTO_APPROVED') {
     if (isDuplicate(`approved:${subject}`)) return;
-    const { chatIds } = requesterRoute(requestedBy);
+    const { chatIds } = requesterRoute(requestedBy, tmdbId);
     const byLine = requestedBy ? ` (pedido por *${requestedBy}*)` : '';
     await notify(`📥 *${subject}* aprobado${byLine} — descargando…`, { chatIds });
     return;
@@ -144,7 +153,7 @@ async function handleJellyseerr(payload) {
 
   if (type === 'MEDIA_FAILED') {
     if (isDuplicate(`failed:${subject}`)) return;
-    const { chatIds } = requesterRoute(requestedBy);
+    const { chatIds } = requesterRoute(requestedBy, tmdbId);
     await notify(`❌ *${subject}* falló al procesarse.`, { chatIds });
     diagnose(`Jellyseerr reporta MEDIA_FAILED para "${subject}". Mensaje: ${payload.message || 'n/a'}`).catch(() => {});
     return;
